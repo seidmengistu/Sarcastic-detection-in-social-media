@@ -1,8 +1,18 @@
-torch
-torchtext
-pandas
-nltk
-transformers
-scikit-learn
-matplotlib
-seaborn
+# Core data science packages
+numpy==1.24.3
+pandas==1.5.3
+scikit-learn==1.2.2
+scipy==1.10.1
+xgboost==1.7.5
+
+# NLP packages
+spacy==3.5.3
+emoji==2.2.0
+nltk==3.8.1
+textblob==0.17.1
+
+# Progress bar
+tqdm==4.65.0
+
+# Download spaCy English model after installing requirements:
+# python -m spacy download en_core_web_sm
