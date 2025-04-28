@@ -1,3 +1,16 @@
 *.csv
 *.json
-
+*.log
+*.txt
+*.xml
+*.zip
+*.tar
+*.gz
+*.tgz
+*.bz2
+*.xz
+.gitattributes
+.gitignore
+__init__.py
+__pycache__
+.git
