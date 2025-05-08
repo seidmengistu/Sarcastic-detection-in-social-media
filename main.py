@@ -25,7 +25,8 @@ def load_and_run_model(model_name: str):
         spec = importlib.util.spec_from_file_location(model_name, model_path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        
+
+
         if hasattr(module, 'run'):
             module.run()
         else:

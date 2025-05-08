@@ -16,3 +16,6 @@ tqdm==4.65.0
 
 # Download spaCy English model after installing requirements:
 # python -m spacy download en_core_web_sm
+
+torch>=1.9.0
+transformers>=4.11.0
