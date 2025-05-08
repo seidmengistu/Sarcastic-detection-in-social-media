@@ -10,10 +10,10 @@ from sklearn.svm import LinearSVC
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report
 from tqdm import tqdm  # for progress bar
+from utils.preprocessing import preprocess_text
 
 def run():
     try:
-        from utils.preprocessing import preprocess_text
 
         # ================ LOAD & PREPROCESS DATA ================
         PROJECT_ROOT_DIR = os.path.abspath(
