@@ -9,6 +9,9 @@ from tqdm import tqdm
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 import os
+import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix
+import seaborn as sns
 
 class SarcasmDataset(Dataset):
     def __init__(self, texts, labels, tokenizer, max_length=128):
@@ -105,6 +108,58 @@ def evaluate(model, dataloader, criterion, device):
     return (total_loss / len(dataloader), 
             classification_report(all_labels, all_preds, target_names=["Not Sarcastic", "Sarcastic"]))
 
+def visualize_results(train_losses, val_losses, train_metrics, val_metrics, save_path=None):
+    """
+    Visualize training results with multiple plots
+    """
+    plt.style.use('seaborn')
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
+    
+    # Plot losses
+    epochs = range(1, len(train_losses) + 1)
+    ax1.plot(epochs, train_losses, 'b-', label='Training Loss')
+    ax1.plot(epochs, val_losses, 'r-', label='Validation Loss')
+    ax1.set_title('Training and Validation Loss')
+    ax1.set_xlabel('Epochs')
+    ax1.set_ylabel('Loss')
+    ax1.legend()
+    
+    # Plot F1 scores
+    ax2.plot(epochs, [m['macro avg']['f1-score'] for m in train_metrics], 'b-', label='Training F1')
+    ax2.plot(epochs, [m['macro avg']['f1-score'] for m in val_metrics], 'r-', label='Validation F1')
+    ax2.set_title('F1 Score Progress')
+    ax2.set_xlabel('Epochs')
+    ax2.set_ylabel('F1 Score')
+    ax2.legend()
+    
+    # Plot confusion matrix for last validation
+    cm = confusion_matrix(val_metrics[-1]['true'], val_metrics[-1]['pred'])
+    sns.heatmap(cm, annot=True, fmt='d', ax=ax3)
+    ax3.set_title('Confusion Matrix (Last Validation)')
+    ax3.set_xlabel('Predicted')
+    ax3.set_ylabel('True')
+    
+    # Plot class-wise F1 scores
+    classes = ['Not Sarcastic', 'Sarcastic']
+    x = range(len(classes))
+    width = 0.35
+    ax4.bar([i - width/2 for i in x], 
+            [val_metrics[-1][c]['f1-score'] for c in classes],
+            width, label='Validation')
+    ax4.bar([i + width/2 for i in x],
+            [train_metrics[-1][c]['f1-score'] for c in classes],
+            width, label='Training')
+    ax4.set_ylabel('F1 Score')
+    ax4.set_title('Class-wise F1 Scores (Last Epoch)')
+    ax4.set_xticks(x)
+    ax4.set_xticklabels(classes)
+    ax4.legend()
+    
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path)
+    plt.show()
+
 def run():
     try:
         # Set device
@@ -146,6 +201,12 @@ def run():
         num_epochs = 3
         best_val_loss = float('inf')
         
+        # Add lists to store metrics
+        train_losses = []
+        val_losses = []
+        train_metrics = []
+        val_metrics = []
+        
         # Training loop
         print("\n=== Starting Training ===")
         for epoch in range(num_epochs):
@@ -153,6 +214,15 @@ def run():
             
             train_loss = train_epoch(model, train_dataloader, optimizer, criterion, device)
             val_loss, val_report = evaluate(model, val_dataloader, criterion, device)
+            
+            # Store metrics
+            train_losses.append(train_loss)
+            val_losses.append(val_loss)
+            
+            # Get training metrics
+            _, train_report = evaluate(model, train_dataloader, criterion, device)
+            train_metrics.append(train_report)
+            val_metrics.append(val_report)
             
             print(f"Training Loss: {train_loss:.4f}")
             print(f"Validation Loss: {val_loss:.4f}")
@@ -163,6 +233,15 @@ def run():
                 best_val_loss = val_loss
                 torch.save(model.state_dict(), 'best_model.pt')
                 print("✓ Saved best model checkpoint")
+        
+        # Visualize results
+        visualize_results(
+            train_losses, 
+            val_losses, 
+            train_metrics, 
+            val_metrics,
+            save_path='training_results.png'
+        )
         
         print("\n=== Training Completed ===")
         print("\n=== Evaluating on Test Set ===")
