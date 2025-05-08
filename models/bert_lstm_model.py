@@ -185,5 +185,49 @@ def run():
         import traceback
         traceback.print_exc()
 
+def test_single_batch():
+    try:
+        # Set device
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        print(f"Using device: {device}")
+
+        # Load a small portion of data
+        PROJECT_ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../."))
+        PREPROCESSED_DATA_PATH = os.path.join(PROJECT_ROOT_DIR, "data", "processed", "preprocessed_dataset.csv")
+        
+        print("Loading data sample...")
+        df = pd.read_csv(PREPROCESSED_DATA_PATH).head(32)  # Just load 32 samples
+        
+        # Initialize tokenizer and model
+        tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        model = BertLSTMModel().to(device)
+        
+        # Create small dataset
+        dataset = SarcasmDataset(df['text'].values, df['class'].values, tokenizer)
+        dataloader = DataLoader(dataset, batch_size=16)
+        
+        # Test forward pass
+        criterion = nn.BCELoss()
+        print("Testing forward pass...")
+        
+        batch = next(iter(dataloader))
+        input_ids = batch['input_ids'].to(device)
+        attention_mask = batch['attention_mask'].to(device)
+        labels = batch['label'].to(device)
+        
+        outputs = model(input_ids, attention_mask)
+        outputs = outputs.view(-1)
+        loss = criterion(outputs, labels.float())
+        
+        print("✓ Forward pass successful!")
+        print(f"Test Loss: {loss.item():.4f}")
+        return True
+
+    except Exception as e:
+        print(f"Error in test: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
+
 if __name__ == "__main__":
-    run() 
+    test_single_batch()  # Run quick test instead of full training 
