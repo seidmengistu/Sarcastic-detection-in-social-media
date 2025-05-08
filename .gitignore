@@ -52,3 +52,9 @@ wheels/
 
 # Preprocessed data
 data/processed/preprocessed_dataset.csv
+
+# Ignore specific model file
+best_model.pt
+
+# Alternatively, ignore all .pt files
+# *.pt
