@@ -14,8 +14,9 @@ class Config:
     BERT_MODEL_NAME = 'bert-base-uncased'
     MAX_LENGTH = 128
     BATCH_SIZE = 16
-    LEARNING_RATE = 2e-5
+    LEARNING_RATE = 5e-5
     NUM_EPOCHS = 3
+    DROPOUT_RATE = 0.3
     
     # Training splits
     TRAIN_SIZE = 0.6
