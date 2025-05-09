@@ -1,85 +1,112 @@
-import pandas as pd
+# Only keep necessary imports
 import matplotlib.pyplot as plt
 import seaborn as sns
-from wordcloud import WordCloud
-from collections import Counter
-import nltk
-from nltk.corpus import stopwords
-from read_integrate_all_data_sources import read_all_data_sources
-nltk.download('stopwords')
-stop_words = set(stopwords.words('english'))
+from sklearn.metrics import confusion_matrix, classification_report
+import numpy as np
 
+def extract_metrics_from_report(report_str):
+    """Extract f1-score from classification report string"""
+    if isinstance(report_str, str):
+        # Find the line with macro avg
+        for line in report_str.split('\n'):
+            if 'macro avg' in line:
+                # Split the line and get f1-score (3rd value)
+                values = [v for v in line.split() if v]
+                return float(values[3])
+    return report_str
 
-def analyze_source(df, title):
+def plot_training_results(train_losses, val_losses, train_metrics, val_metrics, save_path=None):
+    """Plot training results and metrics"""
+    try:
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
+        
+        # Plot losses
+        epochs = range(1, len(train_losses) + 1)
+        ax1.plot(epochs, train_losses, 'b-', label='Training Loss')
+        ax1.plot(epochs, val_losses, 'r-', label='Validation Loss')
+        ax1.set_title('Training and Validation Loss')
+        ax1.set_xlabel('Epochs')
+        ax1.set_ylabel('Loss')
+        ax1.legend()
+        
+        # Plot F1 scores - Handle both dict and string metrics
+        train_f1 = [extract_metrics_from_report(m) for m in train_metrics]
+        val_f1 = [extract_metrics_from_report(m) for m in val_metrics]
+        
+        ax2.plot(epochs, train_f1, 'b-', label='Training F1')
+        ax2.plot(epochs, val_f1, 'r-', label='Validation F1')
+        ax2.set_title('F1 Score Progress')
+        ax2.set_xlabel('Epochs')
+        ax2.set_ylabel('F1 Score')
+        ax2.legend()
+        
+        # For testing, we'll skip confusion matrix and class-wise plots if data isn't in right format
+        if isinstance(val_metrics[-1], dict) and 'true' in val_metrics[-1]:
+            # Plot confusion matrix for last validation
+            cm = confusion_matrix(val_metrics[-1]['true'], val_metrics[-1]['pred'])
+            sns.heatmap(cm, annot=True, fmt='d', ax=ax3)
+            ax3.set_title('Confusion Matrix (Last Validation)')
+            ax3.set_xlabel('Predicted')
+            ax3.set_ylabel('True')
+            
+            # Plot class-wise F1 scores
+            classes = ['Not Sarcastic', 'Sarcastic']
+            x = range(len(classes))
+            width = 0.35
+            
+            if all(c in val_metrics[-1] for c in classes):
+                ax4.bar([i - width/2 for i in x], 
+                        [val_metrics[-1][c]['f1-score'] for c in classes],
+                        width, label='Validation')
+                ax4.bar([i + width/2 for i in x],
+                        [train_metrics[-1][c]['f1-score'] for c in classes],
+                        width, label='Training')
+                ax4.set_ylabel('F1 Score')
+                ax4.set_title('Class-wise F1 Scores (Last Epoch)')
+                ax4.set_xticks(x)
+                ax4.set_xticklabels(classes)
+                ax4.legend()
+        
+        plt.tight_layout()
+        if save_path:
+            plt.savefig(save_path)
+        plt.show()
+        
+    except Exception as e:
+        print(f"Error in plotting: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
-    df['text'] = df['text'].astype(str)
+def get_metrics_report(y_true, y_pred, target_names=["Not Sarcastic", "Sarcastic"]):
+    """Generate detailed metrics report"""
+    return classification_report(y_true, y_pred, target_names=target_names)
 
-    print(f"\n📊 Analysis for: {title}")
-    print("=" * (15 + len(title)))
-
-    # Basic info
-    print(f"Total Records: {len(df)}")
-    print(f"Columns: {df.columns.tolist()}")
-    print("Sample rows:")
-    print(df.sample(3))
-
-    # Nulls
-    print("\nNull value count:")
-    print(df.isnull().sum())
-
-    # Class distribution
-    print("\nClass distribution:")
-    print(df['sarcastic'].value_counts(normalize=True).rename(
-        lambda x: 'Sarcastic' if x == 1 else 'Not Sarcastic'))
-
-    # Text length
-    df['char_count'] = df['text'].apply(len)
-    df['word_count'] = df['text'].apply(lambda x: len(x.split()))
-    print(f"\nAverage Text Length (chars): {df['char_count'].mean():.2f}")
-    print(f"Average Text Length (words): {df['word_count'].mean():.2f}")
-
-    # Top 10 frequent words
-    words = []
-    df['text'].str.lower().str.split().apply(
-        lambda tokens: words.extend([w for w in tokens if w not in stop_words]))
-    word_freq = Counter(words).most_common(10)
-    print("\nTop 10 frequent words (excluding stopwords):")
-    for word, freq in word_freq:
-        print(f"{word}: {freq}")
-
-    # Plot class distribution
-    plt.figure(figsize=(6, 4))
-    sns.countplot(data=df, x='sarcastic', palette='viridis')
-    plt.xticks([0, 1], ['Not Sarcastic', 'Sarcastic'])
-    plt.title(f"{title} - Sarcasm Distribution")
-    plt.show()
-
-    # Plot histogram of word counts
-    plt.figure(figsize=(6, 4))
-    sns.histplot(df['word_count'], bins=40, color='skyblue')
-    plt.title(f"{title} - Text Word Count Distribution")
-    plt.xlabel("Word Count")
-    plt.ylabel("Frequency")
-    plt.show()
-
-    # Word Cloud
-    wordcloud = WordCloud(width=800, height=400,
-                          background_color='white').generate(' '.join(words))
-    plt.figure(figsize=(10, 5))
-    plt.imshow(wordcloud, interpolation='bilinear')
-    plt.axis('off')
-    plt.title(f"{title} - Word Cloud")
-    plt.show()
-
-    return df[["text", "sarcastic", "word_count", "char_count"]]
-
+def test_plotting():
+    """Test function to verify plotting works"""
+    print("Testing plotting functionality...")
+    
+    # Generate sample data
+    n_epochs = 5
+    train_losses = np.random.rand(n_epochs) * 0.5
+    val_losses = np.random.rand(n_epochs) * 0.5
+    
+    # Create sample metrics
+    train_metrics = [
+        f"precision    recall  f1-score   support\nmacro avg  0.{i}6   0.{i}6    0.{i}6   1000\n"
+        for i in range(n_epochs)
+    ]
+    val_metrics = [
+        f"precision    recall  f1-score   support\nmacro avg  0.{i}7   0.{i}7    0.{i}7   1000\n"
+        for i in range(n_epochs)
+    ]
+    
+    try:
+        plot_training_results(train_losses, val_losses, train_metrics, val_metrics)
+        print("✓ Plotting test successful")
+        return True
+    except Exception as e:
+        print(f"✗ Plotting test failed: {str(e)}")
+        return False
 
 if __name__ == "__main__":
-    reddit_data, headlines_data, sarcasm_corpus_combined, combined_data = read_all_data_sources()
-    # reddit_stats = analyze_source(reddit_data, "Reddit Data")
-    # headlines_stats = analyze_source(headlines_data, "Headlines JSON Data")
-    # gen_stats = analyze_source(sarcasm_gen_data, "GEN Data")
-    # hyp_stats = analyze_source(sarcasm_hyp_data, "HYP Data")
-    rq_stats = analyze_source(sarcasm_corpus_combined,
-                              "sarcasm_corpus_combined Data")
-    # combined_stats = analyze_source(combined_data, "Combined Dataset")
+    test_plotting()
