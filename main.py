@@ -1,6 +1,3 @@
-# main.py
-# Entry point for training or inference
-
 import os
 import importlib.util
 from typing import List
