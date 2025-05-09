@@ -12,6 +12,9 @@ import os
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
 import seaborn as sns
+from utils.config import Config
+from utils.dataset_loader import load_data
+from utils.analysis_data import plot_training_results, get_metrics_report
 
 class SarcasmDataset(Dataset):
     def __init__(self, texts, labels, tokenizer, max_length=128):
@@ -161,43 +164,33 @@ def visualize_results(train_losses, val_losses, train_metrics, val_metrics, save
 
 def run():
     try:
-        # Set device
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         print(f"Using device: {device}")
 
-        # Load data
-        PROJECT_ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../."))
-        PREPROCESSED_DATA_PATH = os.path.join(PROJECT_ROOT_DIR, "data", "processed", "preprocessed_dataset.csv")
+        # Load data using utility function
+        data = load_data(preprocessed=True)
+        train_texts, train_labels = data['train']
+        val_texts, val_labels = data['val']
+        test_texts, test_labels = data['test']
         
-        print("Loading data...")
-        df = pd.read_csv(PREPROCESSED_DATA_PATH)
-        
-        # Initialize tokenizer and model
-        tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        # Initialize model with config
+        tokenizer = BertTokenizer.from_pretrained(Config.BERT_MODEL_NAME)
         model = BertLSTMModel().to(device)
-        
-        # Split data
-        train_texts, temp_texts, train_labels, temp_labels = train_test_split(
-            df['text'].values, df['class'].values, test_size=0.4, random_state=42
-        )
-        val_texts, test_texts, val_labels, test_labels = train_test_split(
-            temp_texts, temp_labels, test_size=0.5, random_state=42
-        )
         
         # Create datasets
         train_dataset = SarcasmDataset(train_texts, train_labels, tokenizer)
         val_dataset = SarcasmDataset(val_texts, val_labels, tokenizer)
         test_dataset = SarcasmDataset(test_texts, test_labels, tokenizer)
         
-        # Create dataloaders
-        train_dataloader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-        val_dataloader = DataLoader(val_dataset, batch_size=16)
-        test_dataloader = DataLoader(test_dataset, batch_size=16)
+        # Create dataloaders using config
+        train_dataloader = DataLoader(train_dataset, batch_size=Config.BATCH_SIZE, shuffle=True)
+        val_dataloader = DataLoader(val_dataset, batch_size=Config.BATCH_SIZE)
+        test_dataloader = DataLoader(test_dataset, batch_size=Config.BATCH_SIZE)
         
         # Training setup
         criterion = nn.BCELoss()
-        optimizer = AdamW(model.parameters(), lr=2e-5)
-        num_epochs = 3
+        optimizer = AdamW(model.parameters(), lr=Config.LEARNING_RATE)
+        num_epochs = Config.NUM_EPOCHS
         best_val_loss = float('inf')
         
         # Add lists to store metrics
@@ -233,11 +226,11 @@ def run():
                 torch.save(model.state_dict(), 'best_model.pt')
                 print("✓ Saved best model checkpoint")
         
-        # Visualize results
-        visualize_results(
-            train_losses, 
-            val_losses, 
-            train_metrics, 
+        # Use utility for visualization
+        plot_training_results(
+            train_losses,
+            val_losses,
+            train_metrics,
             val_metrics,
             save_path='training_results.png'
         )
@@ -262,3 +255,44 @@ def run():
         print(f"Error in BERT+LSTM model: {str(e)}")
         import traceback
         traceback.print_exc()
+
+def test_model_pipeline():
+    try:
+        print("Testing BERT+LSTM pipeline...")
+        
+        # Test data loading
+        data = load_data(preprocessed=True)
+        train_texts, train_labels = data['train']
+        print("✓ Data loading successful")
+        print(f"Number of training examples: {len(train_texts)}")
+        
+        # Test model initialization
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        tokenizer = BertTokenizer.from_pretrained(Config.BERT_MODEL_NAME)
+        model = BertLSTMModel().to(device)
+        print("✓ Model initialization successful")
+        
+        # Test forward pass with small batch
+        dataset = SarcasmDataset(train_texts[:16], train_labels[:16], tokenizer)
+        dataloader = DataLoader(dataset, batch_size=4)
+        batch = next(iter(dataloader))
+        
+        outputs = model(
+            batch['input_ids'].to(device),
+            batch['attention_mask'].to(device)
+        )
+        print("✓ Forward pass successful")
+        print(f"Output shape: {outputs.shape}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error in BERT+LSTM test: {str(e)}")
+        traceback.print_exc()
+        return False
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "--test":
+        test_model_pipeline()
+    else:
+        run()
