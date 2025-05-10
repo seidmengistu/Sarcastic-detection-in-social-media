@@ -46,26 +46,42 @@ class SarcasmDataset(Dataset):
         }
 
 class BertLSTMModel(nn.Module):
-    def __init__(self, bert_model_name='bert-base-uncased', lstm_hidden_size=256, dropout_rate=0.3):
-        super().__init__()
-        self.bert = BertModel.from_pretrained(bert_model_name)
-        self.lstm = nn.LSTM(
-            input_size=self.bert.config.hidden_size,
-            hidden_size=lstm_hidden_size,
-            num_layers=2,
-            bidirectional=True,
-            batch_first=True,
-            dropout=dropout_rate if dropout_rate > 0 else 0
-        )
-        self.dropout = nn.Dropout(dropout_rate)
-        self.classifier = nn.Linear(lstm_hidden_size * 2, 1)  # *2 for bidirectional
+    def __init__(self):
+        super(BertLSTMModel, self).__init__()
+        self.bert = BertModel.from_pretrained(Config.BERT_MODEL_NAME)
+        self.lstm = nn.LSTM(768, 256, batch_first=True, bidirectional=True)
+        self.dropout = nn.Dropout(Config.DROPOUT_RATE)  # Use dropout rate from config
+        self.fc = nn.Linear(512, 1)
+        self.sigmoid = nn.Sigmoid()
+        
+        # Add layer normalization for better regularization
+        self.layer_norm = nn.LayerNorm(512)
         
     def forward(self, input_ids, attention_mask):
-        bert_output = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        lstm_output, _ = self.lstm(bert_output.last_hidden_state)
-        pooled_output = torch.mean(lstm_output, dim=1)  # Average pooling
-        pooled_output = self.dropout(pooled_output)
-        return torch.sigmoid(self.classifier(pooled_output))
+        # Get BERT outputs
+        bert_outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        sequence_output = bert_outputs.last_hidden_state
+        
+        # Apply dropout after BERT
+        sequence_output = self.dropout(sequence_output)
+        
+        # Apply LSTM
+        lstm_output, (hidden, cell) = self.lstm(sequence_output)
+        
+        # Concatenate the final forward and backward hidden states
+        hidden = torch.cat((hidden[-2,:,:], hidden[-1,:,:]), dim=1)
+        
+        # Apply layer normalization
+        hidden = self.layer_norm(hidden)
+        
+        # Apply dropout before final classification
+        hidden = self.dropout(hidden)
+        
+        # Apply linear layer and sigmoid
+        output = self.fc(hidden)
+        output = self.sigmoid(output)
+        
+        return output
 
 def train_epoch(model, dataloader, optimizer, criterion, device):
     model.train()
@@ -78,7 +94,12 @@ def train_epoch(model, dataloader, optimizer, criterion, device):
         
         optimizer.zero_grad()
         outputs = model(input_ids, attention_mask)
-        loss = criterion(outputs.squeeze(), labels)
+        
+        # Ensure outputs and labels have compatible shapes
+        outputs_flat = outputs.view(-1)
+        labels_flat = labels.view(-1)
+        
+        loss = criterion(outputs_flat, labels_flat)
         loss.backward()
         optimizer.step()
         
@@ -93,23 +114,36 @@ def evaluate(model, dataloader, criterion, device):
     all_labels = []
     
     with torch.no_grad():
-        for batch in tqdm(dataloader, desc="Evaluating"):
+        for batch in dataloader:
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
-            labels = batch['label'].to(device)
+            labels = batch['label'].float().to(device)
             
             outputs = model(input_ids, attention_mask)
-            outputs = outputs.view(-1)
             
-            loss = criterion(outputs, labels.float())
+            # Ensure outputs and labels have compatible shapes
+            outputs_flat = outputs.view(-1)
+            labels_flat = labels.view(-1)
+            
+            loss = criterion(outputs_flat, labels_flat)
+            
             total_loss += loss.item()
             
-            preds = (outputs > 0.5).cpu().numpy()
+            # Convert predictions to binary (0 or 1)
+            preds = (outputs_flat > 0.5).int().cpu().numpy()
             all_preds.extend(preds.tolist())
-            all_labels.extend(labels.cpu().numpy().tolist())
+            all_labels.extend(labels_flat.cpu().numpy().tolist())
     
-    return (total_loss / len(dataloader), 
-            classification_report(all_labels, all_preds, target_names=["Not Sarcastic", "Sarcastic"]))
+    # Calculate metrics
+    report_dict = classification_report(all_labels, all_preds, 
+                                       target_names=['Not Sarcastic', 'Sarcastic'],
+                                       output_dict=True)
+    
+    # Store true and predicted values for confusion matrix
+    report_dict['true'] = all_labels
+    report_dict['pred'] = all_preds
+    
+    return total_loss / len(dataloader), report_dict
 
 def visualize_results(train_losses, val_losses, train_metrics, val_metrics, save_path=None):
     """
@@ -187,9 +221,11 @@ def run():
         val_dataloader = DataLoader(val_dataset, batch_size=Config.BATCH_SIZE)
         test_dataloader = DataLoader(test_dataset, batch_size=Config.BATCH_SIZE)
         
-        # Training setup
+        # Training setup with weight decay (L2 regularization)
         criterion = nn.BCELoss()
-        optimizer = AdamW(model.parameters(), lr=Config.LEARNING_RATE)
+        optimizer = AdamW(model.parameters(), 
+                         lr=Config.LEARNING_RATE, 
+                         weight_decay=Config.WEIGHT_DECAY)  # Use weight decay from config
         num_epochs = Config.NUM_EPOCHS
         best_val_loss = float('inf')
         
@@ -219,7 +255,13 @@ def run():
             print(f"Training Loss: {train_loss:.4f}")
             print(f"Validation Loss: {val_loss:.4f}")
             print("\nValidation Metrics:")
-            print(val_report)
+            
+            # Print only the important metrics, not the full lists
+            print_report = {k: v for k, v in val_report.items() if k not in ['true', 'pred']}
+            print(f"Accuracy: {print_report['accuracy']:.4f}")
+            print(f"F1 Score (macro): {print_report['macro avg']['f1-score']:.4f}")
+            print(f"Precision: {print_report['macro avg']['precision']:.4f}")
+            print(f"Recall: {print_report['macro avg']['recall']:.4f}")
             
             if val_loss < best_val_loss:
                 best_val_loss = val_loss

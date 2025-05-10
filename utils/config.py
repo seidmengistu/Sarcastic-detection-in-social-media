@@ -16,7 +16,8 @@ class Config:
     BATCH_SIZE = 16
     LEARNING_RATE = 5e-5
     NUM_EPOCHS = 3
-    DROPOUT_RATE = 0.3
+    DROPOUT_RATE = 0.5
+    WEIGHT_DECAY = 0.01
     
     # Training splits
     TRAIN_SIZE = 0.6
