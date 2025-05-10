@@ -5,11 +5,6 @@ from typing import List
 def get_available_models() -> List[str]:
     """Get list of available model files from the models directory."""
     models_dir = os.path.join(os.path.dirname(__file__), 'models')
-    if not os.path.exists(models_dir):
-        os.makedirs(models_dir)
-        print("Created models directory. Please add your model files there.")
-        return []
-    
     model_files = [f[:-3] for f in os.listdir(models_dir) 
                   if f.endswith('.py') and f != '__init__.py']
     return model_files
