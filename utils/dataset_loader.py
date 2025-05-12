@@ -38,41 +38,45 @@ def preprocess_and_save_data():
         return None
 
 def load_data(preprocessed=True):
-    """Load data and return train/val/test splits"""
-    try:
-        # Check if preprocessed data exists
-        if not os.path.exists(Config.PREPROCESSED_DATA_PATH):
-            print("Preprocessed data not found. Starting preprocessing...")
-            df = preprocess_and_save_data()
-            if df is None:
-                raise Exception("Preprocessing failed")
-        else:
-            print(f"Loading data from: {Config.PREPROCESSED_DATA_PATH}")
-            df = pd.read_csv(Config.PREPROCESSED_DATA_PATH)
-        
-        # Split data
-        train_texts, temp_texts, train_labels, temp_labels = train_test_split(
-            df['text'].values, df['class'].values,
-            test_size=(Config.VAL_SIZE + Config.TEST_SIZE),
-            random_state=42,
-            stratify=df['class']
-        )
-        
-        val_texts, test_texts, val_labels, test_labels = train_test_split(
-            temp_texts, temp_labels,
-            test_size=0.5,
-            random_state=42,
-            stratify=temp_labels
-        )
-        
-        return {
-            'train': (train_texts, train_labels),
-            'val': (val_texts, val_labels),
-            'test': (test_texts, test_labels)
-        }
+    """
+    Load and split the dataset using a two-stage split approach:
+    1. First split: 80% train+val, 20% test
+    2. Second split: From the 80%, split into 80% train, 20% val
+    """
+    # Load the appropriate dataset
+    data_path = Config.PREPROCESSED_DATA_PATH if preprocessed else Config.RAW_DATA_PATH
+    df = pd.read_csv(data_path)
     
-    except Exception as e:
-        print(f"Error in load_data: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return None
+    # Extract features and labels
+    texts = df['text'].values
+    labels = df['class'].values
+    
+    # First split: separate test set (20% of total data)
+    train_val_texts, test_texts, train_val_labels, test_labels = train_test_split(
+        texts, 
+        labels,
+        test_size=(1 - Config.TRAIN_VAL_SIZE),  # 20% for test
+        random_state=42,
+        stratify=labels
+    )
+    
+    # Second split: split train_val into train and validation
+    train_texts, val_texts, train_labels, val_labels = train_test_split(
+        train_val_texts,
+        train_val_labels,
+        test_size=Config.VAL_FROM_TRAIN,  # 20% of train_val (16% of total)
+        random_state=42,
+        stratify=train_val_labels
+    )
+    
+    # Print split sizes for verification
+    print(f"\nDataset split sizes:")
+    print(f"Training:   {len(train_texts)} ({len(train_texts)/len(texts):.1%})")
+    print(f"Validation: {len(val_texts)} ({len(val_texts)/len(texts):.1%})")
+    print(f"Test:       {len(test_texts)} ({len(test_texts)/len(texts):.1%})")
+    
+    return {
+        'train': (train_texts, train_labels),
+        'val': (val_texts, val_labels),
+        'test': (test_texts, test_labels)
+    }
