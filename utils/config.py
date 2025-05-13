@@ -22,17 +22,23 @@ class Config:
     BERT_MODEL_NAME = 'bert-base-uncased'
     MAX_LENGTH = 128
     
-    # Training hyperparameters
-    BASE_LEARNING_RATE = 5e-5
-    NUM_EPOCHS = 5
-    DROPOUT_RATE = 0.7
-    WEIGHT_DECAY = 0.15
-    GRADIENT_ACCUMULATION_STEPS = 4
-    EARLY_STOPPING_PATIENCE = 2
+    # Modified Training hyperparameters
+    BASE_LEARNING_RATE = 2e-5  # Reduced from 5e-5 for better generalization
+    NUM_EPOCHS = 8  # Increased from 5 to allow better convergence
+    DROPOUT_RATE = 0.5  # Reduced from 0.7 to prevent overfitting
+    WEIGHT_DECAY = 0.01  # Reduced from 0.15 for better generalization
+    GRADIENT_ACCUMULATION_STEPS = 2  # Reduced from 4 for more frequent updates
+    EARLY_STOPPING_PATIENCE = 3  # Increased from 2 to allow more exploration
     
-    # Training splits
-    TRAIN_VAL_SIZE = 0.8
-    VAL_FROM_TRAIN = 0.2
+    # Modified Training splits
+    TRAIN_VAL_SIZE = 0.85  # Increased from 0.8 for more training data
+    VAL_FROM_TRAIN = 0.15  # Reduced from 0.2
+    
+    # Modified batch sizes
+    BATCH_SIZE = 16 if torch.cuda.is_available() else 8  # Reduced from 24 for better stability
+    
+    # Class weights to handle imbalance
+    CLASS_WEIGHTS = torch.tensor([1.2, 0.8])  # Give more weight to non-sarcastic samples
     
     # GPU settings
     DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -47,14 +53,13 @@ class Config:
     DPI = 100
     
     # Dynamic batch size and learning rate calculation
-    BATCH_SIZE = 24 if torch.cuda.is_available() else 8
     LEARNING_RATE = BASE_LEARNING_RATE * (BATCH_SIZE * GRADIENT_ACCUMULATION_STEPS) / 32
     
     @staticmethod
     def get_batch_size():
         """Simple batch size selection based on device"""
         if torch.cuda.is_available():
-            return 24 if 'T4' in torch.cuda.get_device_name(0) else 16
+            return 16 if 'T4' in torch.cuda.get_device_name(0) else 12
         return 8
     
     @staticmethod

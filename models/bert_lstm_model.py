@@ -1,15 +1,14 @@
 import torch
 from torch import nn
-from torch.optim import AdamW
 from transformers import BertModel, BertTokenizer
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 from sklearn.metrics import classification_report
 from utils.config import Config
 from utils.dataset_loader import load_data
-from utils.analysis_data import plot_training_results
 
 class SarcasmDataset(Dataset):
+    """Dataset class for sarcasm detection"""
     def __init__(self, texts, labels, tokenizer):
         self.texts = texts
         self.labels = labels
@@ -19,246 +18,186 @@ class SarcasmDataset(Dataset):
         return len(self.texts)
     
     def __getitem__(self, idx):
-        encoding = self.tokenizer(
-            str(self.texts[idx]),
-            add_special_tokens=True,
+        # Convert text to BERT input format
+        text = str(self.texts[idx])
+        label = int(self.labels[idx]) if isinstance(self.labels[idx], str) else self.labels[idx]
+        
+        # Tokenize text
+        encoded = self.tokenizer(
+            text,
             max_length=Config.MAX_LENGTH,
             padding='max_length',
             truncation=True,
             return_tensors='pt'
         )
         
+        # Return dictionary of inputs
         return {
-            'input_ids': encoding['input_ids'].flatten(),
-            'attention_mask': encoding['attention_mask'].flatten(),
-            'label': torch.tensor(self.labels[idx], dtype=torch.float)
+            'input_ids': encoded['input_ids'].flatten(),
+            'attention_mask': encoded['attention_mask'].flatten(),
+            'label': torch.tensor(label, dtype=torch.float)
         }
 
 class BertLSTMModel(nn.Module):
+    """BERT + LSTM model for sarcasm detection"""
     def __init__(self):
-        super(BertLSTMModel, self).__init__()
+        super().__init__()
+        # Load pre-trained BERT
         self.bert = BertModel.from_pretrained(Config.BERT_MODEL_NAME)
         
-        # Freeze BERT layers
-        for param in self.bert.embeddings.parameters():
+        # Freeze BERT parameters
+        for param in self.bert.parameters():
             param.requires_grad = False
-        for i in range(10):
-            for param in self.bert.encoder.layer[i].parameters():
-                param.requires_grad = False
+            
+        # Add LSTM layer
+        self.lstm = nn.LSTM(
+            input_size=768,  # BERT output size
+            hidden_size=64,  # LSTM hidden size
+            batch_first=True,
+            bidirectional=True
+        )
         
-        # Model layers
-        self.bert_norm = nn.LayerNorm(768)
-        self.lstm = nn.LSTM(768, 64, batch_first=True, bidirectional=True)
-        self.dropout1 = nn.Dropout(Config.DROPOUT_RATE)
-        self.dropout2 = nn.Dropout(Config.DROPOUT_RATE + 0.1)
-        self.layer_norm = nn.LayerNorm(128)
-        self.fc = nn.Linear(128, 1)
-        self.sigmoid = nn.Sigmoid()
+        # Add dropout for regularization
+        self.dropout = nn.Dropout(Config.DROPOUT_RATE)
+        
+        # Final classification layer
+        self.classifier = nn.Linear(128, 1)  
         
     def forward(self, input_ids, attention_mask):
-        # BERT
+        # 1. Get BERT embeddings
         bert_output = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        sequence_output = self.bert_norm(bert_output.last_hidden_state)
-        sequence_output = self.dropout1(sequence_output)
         
-        # LSTM
-        lstm_output, (hidden, _) = self.lstm(sequence_output)
+        # 2. Pass through LSTM
+        lstm_output, (hidden, _) = self.lstm(bert_output.last_hidden_state)
+        
+        # 3. Combine bidirectional LSTM outputs
         hidden = torch.cat((hidden[-2,:,:], hidden[-1,:,:]), dim=1)
         
-        # Classification
-        hidden = self.layer_norm(hidden)
-        hidden = self.dropout2(hidden)
-        return self.sigmoid(self.fc(hidden))
+        # 4. Apply dropout and classification
+        output = self.dropout(hidden)
+        return torch.sigmoid(self.classifier(output))
 
-def train_epoch(model, dataloader, optimizer, criterion, device):
-    model.train()
-    total_loss = 0
-    optimizer.zero_grad()
+def train_model(model, train_loader, val_loader, device):
+    """Training function"""
+    # Initialize training
+    criterion = nn.BCELoss()  # Binary Cross Entropy Loss
+    optimizer = torch.optim.AdamW(model.parameters(), lr=Config.LEARNING_RATE)
+    best_val_loss = float('inf')
     
-    for batch_idx, batch in enumerate(tqdm(dataloader, desc="Training")):
-        input_ids = batch['input_ids'].to(device)
-        attention_mask = batch['attention_mask'].to(device)
-        labels = batch['label'].to(device)
+    # Training loop
+    for epoch in range(Config.NUM_EPOCHS):
+        print(f"\nEpoch {epoch + 1}/{Config.NUM_EPOCHS}")
         
-        outputs = model(input_ids, attention_mask)
-        loss = criterion(outputs.view(-1), labels) / Config.GRADIENT_ACCUMULATION_STEPS
-        loss.backward()
+        # ====== Training Phase ======
+        model.train()
+        train_loss = 0
         
-        if (batch_idx + 1) % Config.GRADIENT_ACCUMULATION_STEPS == 0:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        optimizer.step()
-        optimizer.zero_grad()
-        
-        total_loss += loss.item() * Config.GRADIENT_ACCUMULATION_STEPS
-    
-    return total_loss / len(dataloader)
-
-def evaluate(model, dataloader, criterion, device):
-    model.eval()
-    total_loss = 0
-    all_preds = []
-    all_labels = []
-    
-    with torch.no_grad():
-        for batch in dataloader:
+        for batch in tqdm(train_loader, desc="Training"):
+            # Clear gradients
+            optimizer.zero_grad()
+            
+            # Move batch to device (GPU/CPU)
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
             labels = batch['label'].to(device)
             
+            # Forward pass
             outputs = model(input_ids, attention_mask)
             loss = criterion(outputs.view(-1), labels)
             
-            total_loss += loss.item()
-            preds = (outputs.view(-1) > 0.5).int().cpu().numpy()
-            all_preds.extend(preds)
-            all_labels.extend(labels.cpu().numpy())
-    
-    report_dict = classification_report(
-        all_labels, 
-        all_preds,
-                                       target_names=['Not Sarcastic', 'Sarcastic'],
-        output_dict=True
-    )
-    report_dict.update({'true': all_labels, 'pred': all_preds})
-    
-    return total_loss / len(dataloader), report_dict
-
-def print_metrics(metrics_dict):
-    """Print metrics in a formatted table."""
-    print("\nValidation Metrics:")
-    print(" " * 16 + "precision   recall  f1-score   support")
-    print("-" * 58)
-    
-    # Print per-class metrics
-    for class_name in ["Not Sarcastic", "Sarcastic"]:
-        metrics = metrics_dict[class_name]
-        print(f"{class_name:16} {metrics['precision']:.2f}      {metrics['recall']:.2f}     {metrics['f1-score']:.2f}      {metrics['support']:4d}")
-    
-    print("\n" + "-" * 58)
-    
-    # Print aggregate metrics - Fixed to use correct keys and calculate total support
-    total_support = sum(metrics_dict[c]['support'] for c in ["Not Sarcastic", "Sarcastic"])
-    print(f"{'accuracy':16}" + " " * 21 + f"{metrics_dict['accuracy']:.2f}      {total_support:4d}")
-    print(f"{'macro avg':16} {metrics_dict['macro avg']['precision']:.2f}      "
-          f"{metrics_dict['macro avg']['recall']:.2f}     {metrics_dict['macro avg']['f1-score']:.2f}      {total_support:4d}")
-    print(f"{'weighted avg':16} {metrics_dict['weighted avg']['precision']:.2f}      "
-          f"{metrics_dict['weighted avg']['recall']:.2f}     {metrics_dict['weighted avg']['f1-score']:.2f}      {total_support:4d}")
+            # Backward pass
+            loss.backward()
+            optimizer.step()
+            
+            train_loss += loss.item()
+            
+        # ====== Validation Phase ======
+        model.eval()
+        val_loss = 0
+        predictions = []
+        true_labels = []
+        
+        with torch.no_grad():
+            for batch in val_loader:
+                # Move batch to device
+                input_ids = batch['input_ids'].to(device)
+                attention_mask = batch['attention_mask'].to(device)
+                labels = batch['label'].to(device)
+                
+                # Get predictions
+                outputs = model(input_ids, attention_mask)
+                loss = criterion(outputs.view(-1), labels)
+                
+                # Store results
+                val_loss += loss.item()
+                predictions.extend((outputs.view(-1) > 0.5).int().cpu().tolist())
+                true_labels.extend(labels.cpu().tolist())
+        
+        # Calculate average losses
+        avg_train_loss = train_loss / len(train_loader)
+        avg_val_loss = val_loss / len(val_loader)
+        
+        # Print progress
+        print(f"\nAverage Training Loss: {avg_train_loss:.4f}")
+        print(f"Average Validation Loss: {avg_val_loss:.4f}")
+        
+        # Save best model
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            torch.save(model.state_dict(), Config.BEST_MODEL_PATH)
+            print("✓ Saved best model")
+        
+        # Print metrics
+        report = classification_report(
+            true_labels, 
+            predictions,
+            target_names=['Not Sarcastic', 'Sarcastic']
+        )
+        print("\nValidation Metrics:")
+        print(report)
 
 def run():
+    """Main function to run the model"""
     try:
-        # Setup device
+        #  Setup device
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        
-        if torch.cuda.is_available():
-            n_gpu = torch.cuda.device_count()
-            print(f"Found {n_gpu} GPU(s) available")
-            for i in range(n_gpu):
-                print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
-                print(f"Memory Usage:")
-                print(f"Allocated: {torch.cuda.memory_allocated(i)/1024**2:.2f}MB")
-                print(f"Cached: {torch.cuda.memory_reserved(i)/1024**2:.2f}MB")
         print(f"Using device: {device}")
-
-        # Load and prepare data
+        
+        #  Load and prepare data
         data = load_data(preprocessed=True)
-        print("we are here",data)
         if not data:
             return False
-
-        # Convert labels
-        label_map = {'notsarc': 0, 'sarc': 1}
+        
+        #  Convert labels to integers
         for split in ['train', 'val', 'test']:
             texts, labels = data[split]
-            data[split] = (texts, [label_map.get(l, l) for l in labels])
-
-        # Initialize model
+            if isinstance(labels[0], str):
+                labels = [1 if label == 'sarc' else 0 for label in labels]
+                data[split] = (texts, labels)
+        
+        #  Initialize model and tokenizer
         tokenizer = BertTokenizer.from_pretrained(Config.BERT_MODEL_NAME)
         model = BertLSTMModel().to(device)
-        if torch.cuda.device_count() > 1:
-            model = nn.DataParallel(model)
-
-        # Prepare datasets and dataloaders
-        datasets = {
-            split: SarcasmDataset(texts, labels, tokenizer) 
-            for split, (texts, labels) in data.items()
-        }
         
-        torch.cuda.empty_cache()
-        dataloaders = {
-            split: DataLoader(
-                dataset,
-                batch_size=Config.BATCH_SIZE,
-                shuffle=(split == 'train'),
-                pin_memory=True,
-                num_workers=Config.NUM_WORKERS
-            )
-            for split, dataset in datasets.items()
-        }
+        #  Create datasets
+        train_dataset = SarcasmDataset(data['train'][0], data['train'][1], tokenizer)
+        val_dataset = SarcasmDataset(data['val'][0], data['val'][1], tokenizer)
         
-        # Training setup
-        criterion = nn.BCELoss()
-        optimizer = AdamW(model.parameters(), lr=Config.LEARNING_RATE, weight_decay=Config.WEIGHT_DECAY)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=1)
+        #  Create dataloaders
+        train_loader = DataLoader(
+            train_dataset, 
+            batch_size=Config.BATCH_SIZE, 
+            shuffle=True
+        )
+        val_loader = DataLoader(
+            val_dataset, 
+            batch_size=Config.BATCH_SIZE
+        )
         
-        # Training tracking
-        best_val_loss = float('inf')
-        early_stopping_patience = 2
-        no_improve_epochs = 0
-        metrics = {
-            'train_losses': [], 'val_losses': [],
-            'train_metrics': [], 'val_metrics': []
-        }
+        # Train model
+        train_model(model, train_loader, val_loader, device)
+        return True
         
-        # Training loop
-        print("\n=== Starting Training ===")
-        for epoch in range(Config.NUM_EPOCHS):
-            print(f"\nEpoch {epoch + 1}/{Config.NUM_EPOCHS}")
-            
-            train_loss = train_epoch(model, dataloaders['train'], optimizer, criterion, device)
-            val_loss, val_report = evaluate(model, dataloaders['val'], criterion, device)
-            
-            # Store metrics
-            metrics['train_losses'].append(train_loss)
-            metrics['val_losses'].append(val_loss)
-            _, train_report = evaluate(model, dataloaders['train'], criterion, device)
-            metrics['train_metrics'].append(train_report)
-            metrics['val_metrics'].append(val_report)
-            
-            # Print metrics
-            print(f"\nTraining Loss: {train_loss:.4f}")
-            print(f"Validation Loss: {val_loss:.4f}")
-            print_metrics(val_report)
-            
-            # Learning rate scheduling
-            scheduler.step(val_loss)
-            
-            # Early stopping
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                torch.save(model.state_dict(), 'best_model.pt')
-                print("✓ Saved best model checkpoint")
-                no_improve_epochs = 0
-            else:
-                no_improve_epochs += 1
-                if no_improve_epochs >= early_stopping_patience:
-                    print(f"\nEarly stopping triggered after {epoch + 1} epochs")
-                    break
-
-        # Plot results
-        plot_training_results(**metrics, save_path='training_results.png')
-        
-        # Final evaluation
-        print("\n=== Evaluating on Test Set ===")
-        model.load_state_dict(torch.load('best_model.pt'))
-        test_loss, test_report = evaluate(model, dataloaders['test'], criterion, device)
-        print("\n=== Final Test Results ===")
-        print("="*50)
-        print(f"Test Loss: {test_loss:.4f}")
-        print("\nDetailed Test Metrics:")
-        print("="*50)
-        print_metrics(test_report)
-        print("="*50)
-
     except Exception as e:
         print(f"Error in BERT-LSTM model: {str(e)}")
         import traceback
@@ -266,4 +205,4 @@ def run():
         return False
 
 if __name__ == "__main__":
-        run()
+    run()
