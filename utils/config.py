@@ -23,23 +23,21 @@ class Config:
     MAX_LENGTH = 128
     
     # Modified Training hyperparameters
-    BASE_LEARNING_RATE = 2e-5  # Reduced from 5e-5 for better generalization
-    NUM_EPOCHS = 8  # Increased from 5 to allow better convergence
-    DROPOUT_RATE = 0.5  # Reduced from 0.7 to prevent overfitting
-    WEIGHT_DECAY = 0.01  # Reduced from 0.15 for better generalization
-    GRADIENT_ACCUMULATION_STEPS = 2  # Reduced from 4 for more frequent updates
-    EARLY_STOPPING_PATIENCE = 3  # Increased from 2 to allow more exploration
+    BASE_LEARNING_RATE = 2e-5  
+    NUM_EPOCHS = 8  
+    DROPOUT_RATE = 0.5  
+    WEIGHT_DECAY = 0.01  
+    GRADIENT_ACCUMULATION_STEPS = 2  
+    EARLY_STOPPING_PATIENCE = 3  
     
     # Modified Training splits
-    TRAIN_VAL_SIZE = 0.85  # Increased from 0.8 for more training data
-    VAL_FROM_TRAIN = 0.15  # Reduced from 0.2
+    TRAIN_VAL_SIZE = 0.85  
+    VAL_FROM_TRAIN = 0.15  
     
     # Modified batch sizes
-    BATCH_SIZE = 16 if torch.cuda.is_available() else 8  # Reduced from 24 for better stability
-    
+    BATCH_SIZE = 16 if torch.cuda.is_available() else 8 
     # Class weights to handle imbalance
-    CLASS_WEIGHTS = torch.tensor([1.2, 0.8])  # Give more weight to non-sarcastic samples
-    
+    CLASS_WEIGHTS = torch.tensor([1.2, 0.8])  
     # GPU settings
     DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     NUM_WORKERS = 4 if torch.cuda.is_available() else 2
