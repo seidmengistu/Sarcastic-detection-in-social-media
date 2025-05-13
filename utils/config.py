@@ -53,15 +53,4 @@ class Config:
     # Dynamic batch size and learning rate calculation
     LEARNING_RATE = BASE_LEARNING_RATE * (BATCH_SIZE * GRADIENT_ACCUMULATION_STEPS) / 32
     
-    @staticmethod
-    def get_batch_size():
-        """Simple batch size selection based on device"""
-        if torch.cuda.is_available():
-            return 16 if 'T4' in torch.cuda.get_device_name(0) else 12
-        return 8
-    
-    @staticmethod
-    def cleanup_gpu_memory():
-        """Basic GPU memory cleanup"""
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+
