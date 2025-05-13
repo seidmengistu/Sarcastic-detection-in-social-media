@@ -18,7 +18,6 @@ def load_and_run_model(model_name: str) -> bool:
     """Load and run selected model."""
     try:
         model_path = os.path.join(os.path.dirname(__file__), 'models', f'{model_name}.py')
-        
         if not os.path.exists(model_path):
             print(f"Model file {model_name}.py not found")
             return False
@@ -29,24 +28,21 @@ def load_and_run_model(model_name: str) -> bool:
         
         if hasattr(module, 'run'):
             return module.run()
-        else:
-            print(f"Error: {model_name}.py must have a 'run' function")
-            return False
+        print(f"Error: {model_name}.py must have a 'run' function")
+        return False
             
     except Exception as e:
         print(f"Error running model {model_name}: {str(e)}")
-        import traceback
-        traceback.print_exc()
         return False
 
 def main():
     try:
-        # Process data if needed
         if not os.path.exists(Config.PREPROCESSED_DATA_PATH):
             print("Preprocessing dataset...")
             process_dataset()
         
         available_models = get_available_models()
+        print(available_models)
         if not available_models:
             print("No models found in the models directory.")
             return
@@ -65,15 +61,12 @@ def main():
                     print(f"\nRunning model: {selected_model}")
                     load_and_run_model(selected_model)
                     break
-                else:
-                    print("Invalid choice. Please try again.")
+                print("Invalid choice. Please try again.")
             except ValueError:
                 print("Please enter a valid number.")
                 
     except Exception as e:
         print(f"Error in main: {str(e)}")
-        import traceback
-        traceback.print_exc()
 
 if __name__ == "__main__":
     main()
