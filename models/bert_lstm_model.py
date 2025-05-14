@@ -49,32 +49,34 @@ class BertLSTMModel(nn.Module):
         for param in self.bert.parameters():
             param.requires_grad = False
             
-        # Add LSTM layer
+        # Add LSTM layer with Config sizes
         self.lstm = nn.LSTM(
             input_size=768,  # BERT output size
-            hidden_size=64,  # LSTM hidden size
+            hidden_size=Config.HIDDEN_SIZE,  # From config
             batch_first=True,
             bidirectional=True
         )
+        
+        # Add intermediate layer
+        self.intermediate = nn.Linear(Config.HIDDEN_SIZE * 2, Config.INTERMEDIATE_SIZE)
+        self.activation = nn.ReLU()
         
         # Add dropout for regularization
         self.dropout = nn.Dropout(Config.DROPOUT_RATE)
         
         # Final classification layer
-        self.classifier = nn.Linear(128, 1)  
+        self.classifier = nn.Linear(Config.INTERMEDIATE_SIZE, 1)
         
     def forward(self, input_ids, attention_mask):
-        # 1. Get BERT embeddings
         bert_output = self.bert(input_ids=input_ids, attention_mask=attention_mask)
         
-        # 2. Pass through LSTM
         lstm_output, (hidden, _) = self.lstm(bert_output.last_hidden_state)
         
-        # 3. Combine bidirectional LSTM outputs
         hidden = torch.cat((hidden[-2,:,:], hidden[-1,:,:]), dim=1)
         
-        # 4. Apply dropout and classification
-        output = self.dropout(hidden)
+        intermediate = self.activation(self.intermediate(hidden))
+        
+        output = self.dropout(intermediate)
         return torch.sigmoid(self.classifier(output))
 
 def train_model(model, train_loader, val_loader, device):
@@ -162,7 +164,7 @@ def run():
         #  Setup device
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         print(f"Using device: {device}")
-        
+
         #  Load and prepare data
         data = load_data(preprocessed=True)
         if not data:
@@ -205,4 +207,4 @@ def run():
         return False
 
 if __name__ == "__main__":
-    run()
+        run()
