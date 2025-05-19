@@ -6,6 +6,8 @@ from tqdm import tqdm
 from sklearn.metrics import classification_report
 from utils.config import Config
 from utils.dataset_loader import load_data
+from utils.evaluation_utils import evaluate_model_predictions
+
 
 class SarcasmDataset(Dataset):
     """Dataset class for sarcasm detection"""
@@ -25,10 +27,11 @@ class SarcasmDataset(Dataset):
         # Tokenize text
         encoded = self.tokenizer(
             text,
-            max_length=Config.MAX_LENGTH,
+            max_length=Config.BERT_MAX_LENGTH,
             padding='max_length',
             truncation=True,
-            return_tensors='pt'
+            return_tensors='pt',
+            add_special_tokens=True
         )
         
         # Return dictionary of inputs
@@ -40,10 +43,10 @@ class SarcasmDataset(Dataset):
 
 class BertLSTMModel(nn.Module):
     """BERT + LSTM model for sarcasm detection"""
-    def __init__(self):
+    def __init__(self, model_name='bert-base-uncased'):
         super().__init__()
         # Load pre-trained BERT
-        self.bert = BertModel.from_pretrained(Config.BERT_MODEL_NAME)
+        self.bert = BertModel.from_pretrained(model_name)
         
         # Freeze BERT parameters
         for param in self.bert.parameters():
@@ -51,8 +54,8 @@ class BertLSTMModel(nn.Module):
             
         # Add LSTM layer with Config sizes
         self.lstm = nn.LSTM(
-            input_size=768,  # BERT output size
-            hidden_size=Config.HIDDEN_SIZE,  # From config
+            input_size=768, 
+            hidden_size=Config.HIDDEN_SIZE,  
             batch_first=True,
             bidirectional=True
         )
@@ -82,7 +85,7 @@ class BertLSTMModel(nn.Module):
 def train_model(model, train_loader, val_loader, device):
     """Training function"""
     # Initialize training
-    criterion = nn.BCELoss()  # Binary Cross Entropy Loss
+    criterion = nn.BCELoss()  
     optimizer = torch.optim.AdamW(model.parameters(), lr=Config.LEARNING_RATE)
     best_val_loss = float('inf')
     
@@ -99,9 +102,9 @@ def train_model(model, train_loader, val_loader, device):
             optimizer.zero_grad()
             
             # Move batch to device (GPU/CPU)
-            input_ids = batch['input_ids'].to(device)
-            attention_mask = batch['attention_mask'].to(device)
-            labels = batch['label'].to(device)
+            input_ids = batch['input_ids'].to(Config.DEVICE)
+            attention_mask = batch['attention_mask'].to(Config.DEVICE)
+            labels = batch['label'].to(Config.DEVICE)
             
             # Forward pass
             outputs = model(input_ids, attention_mask)
@@ -122,9 +125,9 @@ def train_model(model, train_loader, val_loader, device):
         with torch.no_grad():
             for batch in val_loader:
                 # Move batch to device
-                input_ids = batch['input_ids'].to(device)
-                attention_mask = batch['attention_mask'].to(device)
-                labels = batch['label'].to(device)
+                input_ids = batch['input_ids'].to(Config.DEVICE)
+                attention_mask = batch['attention_mask'].to(Config.DEVICE)
+                labels = batch['label'].to(Config.DEVICE)
                 
                 # Get predictions
                 outputs = model(input_ids, attention_mask)
@@ -146,7 +149,7 @@ def train_model(model, train_loader, val_loader, device):
         # Save best model
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            torch.save(model.state_dict(), Config.BEST_MODEL_PATH)
+            torch.save(model.state_dict(), Config.BERT_BEST_MODEL_PATH)
             print("✓ Saved best model")
         
         # Print metrics
@@ -161,16 +164,10 @@ def train_model(model, train_loader, val_loader, device):
 def run():
     """Main function to run the model"""
     try:
-        #  Setup device
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        print(f"Using device: {device}")
-
-        #  Load and prepare data
         data = load_data(preprocessed=True)
         if not data:
             return False
         
-        #  Convert labels to integers
         for split in ['train', 'val', 'test']:
             texts, labels = data[split]
             if isinstance(labels[0], str):
@@ -179,25 +176,45 @@ def run():
         
         #  Initialize model and tokenizer
         tokenizer = BertTokenizer.from_pretrained(Config.BERT_MODEL_NAME)
-        model = BertLSTMModel().to(device)
+        model = BertLSTMModel().to(Config.DEVICE)
         
         #  Create datasets
         train_dataset = SarcasmDataset(data['train'][0], data['train'][1], tokenizer)
         val_dataset = SarcasmDataset(data['val'][0], data['val'][1], tokenizer)
-        
+        test_dataset = SarcasmDataset(data['test'][0], data['test'][1], tokenizer)
+
         #  Create dataloaders
         train_loader = DataLoader(
             train_dataset, 
             batch_size=Config.BATCH_SIZE, 
-            shuffle=True
+            shuffle=True,
+            # num_workers=Config.NUM_WORKERS,#uncomment those lines if you want to use GPU
+            # pin_memory=Config.PIN_MEMORY   
         )
         val_loader = DataLoader(
             val_dataset, 
-            batch_size=Config.BATCH_SIZE
+            batch_size=Config.BATCH_SIZE,
+            # num_workers=Config.NUM_WORKERS,#uncomment those lines if you want to use GPU
+            # pin_memory=Config.PIN_MEMORY
+        )
+        
+        # Create test dataset and loader
+        test_loader = DataLoader(
+            test_dataset, 
+            batch_size=Config.BATCH_SIZE,
+            # num_workers=Config.NUM_WORKERS,#uncomment those lines if you want to use GPU
+            # pin_memory=Config.PIN_MEMORY
         )
         
         # Train model
-        train_model(model, train_loader, val_loader, device)
+        train_model(model, train_loader, val_loader, Config.DEVICE)
+        
+        # Load best model for testing
+        model.load_state_dict(torch.load(Config.BERT_BEST_MODEL_PATH))
+        
+        # Evaluate on test set
+        results = evaluate_model_predictions(model, test_loader, Config.DEVICE)
+        
         return True
         
     except Exception as e:
