@@ -1,6 +1,6 @@
 # Sarcasm Detection in Social Media
 
-This project implements deep learning models and classical methods to detect sarcasm in social media text using BERT and RoBERTa with BiLSTM architectures.
+This project implements deep learning models and classical methods to detect sarcasm in social media text using BERT and RoBERTa with LSTM architectures.
 
 ## Project Structure
 
