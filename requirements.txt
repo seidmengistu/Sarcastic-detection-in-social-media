@@ -19,3 +19,8 @@ transformers>=4.11.0
 
 matplotlib>=3.3.0
 seaborn>=0.11.0
+
+optuna==3.3.0
+
+# Word Cloud
+wordcloud==1.8.1
