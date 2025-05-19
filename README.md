@@ -125,13 +125,3 @@ The models are evaluated using:
 Results are saved and visualized for both training and validation phases.
 
 ```
-
-This README provides:
-1. Clear project structure
-2. Model descriptions
-3. Usage instructions
-4. Configuration details
-5. Requirements
-6. Performance metrics
-
-```
