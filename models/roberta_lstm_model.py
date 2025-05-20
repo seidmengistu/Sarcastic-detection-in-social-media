@@ -200,7 +200,7 @@ def run():
         # Get data splits
         train_texts, train_labels = data['train']
         val_texts, val_labels = data['val']
-        test_texts, test_labels = data['test']  # Add test data
+        test_texts, test_labels = data['test'] 
         
         # Convert labels
         train_labels = [1 if label == 'sarc' else 0 for label in train_labels]
