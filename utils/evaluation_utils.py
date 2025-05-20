@@ -18,11 +18,17 @@ def evaluate_model_predictions(model, test_loader, device):
             labels = batch['label'].cpu().numpy()
             
             outputs = model(input_ids, attention_mask)
-            predictions = torch.sigmoid(outputs).squeeze().cpu().numpy()
-            predictions = (predictions > 0.5).astype(int)
+            predictions = torch.sigmoid(outputs).squeeze()
             
-            all_predictions.extend(predictions)
-            all_labels.extend(labels)
+            # Handle single prediction case
+            if predictions.dim() == 0:
+                predictions = predictions.unsqueeze(0)
+            
+            predictions = (predictions.cpu().numpy() > 0.5).astype(int)
+            
+            # Convert to list before extending
+            all_predictions.extend(predictions.tolist())
+            all_labels.extend(labels.tolist())
     
     print("\nValidation Metrics:")
     print(classification_report(
