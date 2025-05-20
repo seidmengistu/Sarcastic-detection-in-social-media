@@ -47,11 +47,7 @@ class BertLSTMModel(nn.Module):
         super().__init__()
         # Load pre-trained BERT
         self.bert = BertModel.from_pretrained(model_name)
-        
-        # Freeze BERT parameters
-        for param in self.bert.parameters():
-            param.requires_grad = False
-            
+
         # Add LSTM layer with Config sizes
         self.lstm = nn.LSTM(
             input_size=768, 
@@ -80,13 +76,16 @@ class BertLSTMModel(nn.Module):
         intermediate = self.activation(self.intermediate(hidden))
         
         output = self.dropout(intermediate)
-        return torch.sigmoid(self.classifier(output))
+        return self.classifier(output)
 
 def train_model(model, train_loader, val_loader, device):
     """Training function"""
-    # Initialize training
-    criterion = nn.BCELoss()  
-    optimizer = torch.optim.AdamW(model.parameters(), lr=Config.LEARNING_RATE)
+    criterion = nn.BCEWithLogitsLoss()
+    optimizer = torch.optim.AdamW(
+        model.parameters(), 
+        lr=Config.LEARNING_RATE,
+        weight_decay=Config.WEIGHT_DECAY
+    )
     best_val_loss = float('inf')
     
     # Training loop
