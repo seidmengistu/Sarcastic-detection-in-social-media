@@ -25,11 +25,13 @@ def evaluate_test_set(model, test_loader, device):
                 labels = batch['label'].cpu().numpy()
                 
                 outputs = model(input_ids, attention_mask)
-                predictions = torch.sigmoid(outputs).squeeze().cpu().numpy()
-                predictions = (predictions > 0.5).astype(int)
+                predictions = torch.sigmoid(outputs).squeeze()
+                if predictions.dim() == 0:  # Handle single prediction
+                    predictions = predictions.unsqueeze(0)
+                predictions = (predictions.cpu().numpy() > 0.5).astype(int)
                 
-                all_predictions.extend(predictions)
-                all_labels.extend(labels)
+                all_predictions.extend(predictions.tolist())  # Convert to list before extending
+                all_labels.extend(labels.tolist())  # Convert to list before extending
         
         # Calculate and display metrics
         print("\nValidation Metrics:")
