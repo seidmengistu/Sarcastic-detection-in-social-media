@@ -19,7 +19,7 @@ class Config:
     # BERT Configuration
     BERT_MODEL_NAME = 'bert-base-uncased'
     BERT_HIDDEN_SIZE = 768
-    BERT_MAX_LENGTH = 256
+    BERT_MAX_LENGTH = 128
     BERT_BEST_MODEL_PATH = os.path.join(PROJECT_ROOT, "checkpoints", "best_bert_model.pt")
     
     # RoBERTa Configuration
@@ -29,7 +29,7 @@ class Config:
     ROBERTA_BEST_MODEL_PATH = os.path.join(PROJECT_ROOT, "checkpoints", "best_roberta_model.pt")
     
     # Common training parameters
-    NUM_EPOCHS = 5
+    NUM_EPOCHS = 3
     TRAIN_VAL_SIZE = 0.80
     VAL_FROM_TRAIN = 0.20
     
@@ -37,12 +37,12 @@ class Config:
     HIDDEN_SIZE = 512
     INTERMEDIATE_SIZE = 128
     # Training hyperparameters
-    LEARNING_RATE = 0.0005656087011158776        
-    DROPOUT_RATE = 0.28220658563239703
+    LEARNING_RATE = 2e-5       
+    DROPOUT_RATE = 0.3
     WEIGHT_DECAY = 0.01
     
     # Training settings
-    BATCH_SIZE = 32 if torch.cuda.is_available() else 8  
+    BATCH_SIZE = 16
     print(f"Using device: {DEVICE}")
     
     # RoBERTa configurations
