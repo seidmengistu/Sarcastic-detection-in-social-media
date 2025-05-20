@@ -36,21 +36,18 @@ This project implements deep learning models and classical methods to detect sar
 ### 1. BERT-LSTM
 
 - Uses BERT-base-uncased as the encoder
-- Followed by a bidirectional LSTM layer
+- Followed by an LSTM layer
 - Includes dropout and intermediate layers for better generalization
 
-### 2. RoBERTa-BiLSTM
+### 2. RoBERTa-LSTM
 
 - Uses RoBERTa-base as the encoder
-- Implements a bidirectional LSTM for sequence processing
+- Implements a LSTM for sequence processing
 - Features mixed precision training for efficiency
 - Includes gradient clipping and memory optimization
 
 ## Features
 
-- Mixed precision training (FP16)
-- Gradient clipping for stability
-- Memory optimization for GPU usage
 - Comprehensive evaluation metrics
 - Confusion matrix visualization
 - Word cloud generation for data analysis
