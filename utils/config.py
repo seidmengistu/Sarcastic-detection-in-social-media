@@ -7,11 +7,7 @@ class Config:
     DATA_DIR = os.path.join(PROJECT_ROOT, "data")
     RAW_DATA_PATH = os.path.join(DATA_DIR, "raw", "dataset_unificato.csv")
     PREPROCESSED_DATA_PATH = os.path.join(DATA_DIR, "processed", "preprocessed_dataset.csv")
-    
-    # Create necessary directories
-    os.makedirs(os.path.join(DATA_DIR, "raw"), exist_ok=True)
-    os.makedirs(os.path.join(DATA_DIR, "processed"), exist_ok=True)
-    os.makedirs(os.path.join(PROJECT_ROOT, "checkpoints"), exist_ok=True)
+
     
     # Device configuration
     DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
