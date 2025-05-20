@@ -69,7 +69,7 @@ class BertLSTMModel(nn.Module):
     def forward(self, input_ids, attention_mask):
         bert_output = self.bert(input_ids=input_ids, attention_mask=attention_mask)
         
-        lstm_output, (hidden, _) = self.lstm(bert_output.last_hidden_state)
+        _, (hidden, _) = self.lstm(bert_output.last_hidden_state)
         
         hidden = torch.cat((hidden[-2,:,:], hidden[-1,:,:]), dim=1)
         
@@ -78,7 +78,7 @@ class BertLSTMModel(nn.Module):
         output = self.dropout(intermediate)
         return self.classifier(output)
 
-def train_model(model, train_loader, val_loader, device):
+def train_model(model, train_loader, val_loader):
     """Training function"""
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.AdamW(
@@ -206,7 +206,7 @@ def run():
         )
         
         # Train model
-        train_model(model, train_loader, val_loader, Config.DEVICE)
+        train_model(model, train_loader, val_loader)
         
         # Load best model for testing
         model.load_state_dict(torch.load(Config.BERT_BEST_MODEL_PATH))
