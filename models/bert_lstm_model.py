@@ -42,7 +42,7 @@ class SarcasmDataset(Dataset):
         }
 
 class BertLSTMModel(nn.Module):
-    """BERT + LSTM model for sarcasm detection"""
+    """BERT + BiLSTM model for sarcasm detection"""
     def __init__(self, model_name='bert-base-uncased'):
         super().__init__()
         # Load pre-trained BERT
@@ -51,13 +51,13 @@ class BertLSTMModel(nn.Module):
         # Add LSTM layer with Config sizes
         self.lstm = nn.LSTM(
             input_size=768, 
-            hidden_size=Config.HIDDEN_SIZE,  
+            hidden_size=Config.BERT_HIDDEN_SIZE,  
             batch_first=True,
             bidirectional=True
         )
         
         # Add intermediate layer
-        self.intermediate = nn.Linear(Config.HIDDEN_SIZE * 2, Config.INTERMEDIATE_SIZE)
+        self.intermediate = nn.Linear(Config.BERT_HIDDEN_SIZE * 2, Config.INTERMEDIATE_SIZE)
         self.activation = nn.ReLU()
         
         # Add dropout for regularization
@@ -88,6 +88,12 @@ def train_model(model, train_loader, val_loader):
     )
     best_val_loss = float('inf')
     
+    # Lists to store metrics for plotting
+    train_losses = []
+    val_losses = []
+    train_metrics = []
+    val_metrics = []
+    
     # Training loop
     for epoch in range(Config.NUM_EPOCHS):
         print(f"\nEpoch {epoch + 1}/{Config.NUM_EPOCHS}")
@@ -95,6 +101,8 @@ def train_model(model, train_loader, val_loader):
         # ====== Training Phase ======
         model.train()
         train_loss = 0
+        train_predictions = []
+        train_true_labels = []
         
         for batch in tqdm(train_loader, desc="Training"):
             # Clear gradients
@@ -114,6 +122,25 @@ def train_model(model, train_loader, val_loader):
             optimizer.step()
             
             train_loss += loss.item()
+            
+            # Store predictions and labels for metrics
+            train_predictions.extend((outputs.view(-1) > 0.5).int().cpu().tolist())
+            train_true_labels.extend(labels.cpu().tolist())
+            
+        # Calculate average training loss
+        avg_train_loss = train_loss / len(train_loader)
+        train_losses.append(avg_train_loss)
+        
+        # Get training metrics
+        train_report = classification_report(
+            train_true_labels,
+            train_predictions,
+            target_names=['Not Sarcastic', 'Sarcastic'],
+            output_dict=True
+        )
+        train_report['true'] = train_true_labels
+        train_report['pred'] = train_predictions
+        train_metrics.append(train_report)
             
         # ====== Validation Phase ======
         model.eval()
@@ -137,9 +164,20 @@ def train_model(model, train_loader, val_loader):
                 predictions.extend((outputs.view(-1) > 0.5).int().cpu().tolist())
                 true_labels.extend(labels.cpu().tolist())
         
-        # Calculate average losses
-        avg_train_loss = train_loss / len(train_loader)
+        # Calculate average validation loss
         avg_val_loss = val_loss / len(val_loader)
+        val_losses.append(avg_val_loss)
+        
+        # Get validation metrics
+        val_report = classification_report(
+            true_labels,
+            predictions,
+            target_names=['Not Sarcastic', 'Sarcastic'],
+            output_dict=True
+        )
+        val_report['true'] = true_labels
+        val_report['pred'] = predictions
+        val_metrics.append(val_report)
         
         # Print progress
         print(f"\nAverage Training Loss: {avg_train_loss:.4f}")
@@ -152,13 +190,25 @@ def train_model(model, train_loader, val_loader):
             print("✓ Saved best model")
         
         # Print metrics
-        report = classification_report(
+        print("\nValidation Metrics:")
+        print(classification_report(
             true_labels, 
             predictions,
             target_names=['Not Sarcastic', 'Sarcastic']
-        )
-        print("\nValidation Metrics:")
-        print(report)
+        ))
+    
+    # Plot and save training results
+    from utils.analysis_data import plot_training_results
+    plot_training_results(
+        train_losses,
+        val_losses,
+        train_metrics,
+        val_metrics,
+        save_path='bert_bilstm_training.png'
+    )
+    print("✓ Training plot saved as bert_bilstm_training.png")
+    
+    return train_losses, val_losses, train_metrics, val_metrics
 
 def run():
     """Main function to run the model"""
@@ -187,26 +237,21 @@ def run():
             train_dataset, 
             batch_size=Config.BATCH_SIZE, 
             shuffle=True,
-            # num_workers=Config.NUM_WORKERS,#uncomment those lines if you want to use GPU
-            # pin_memory=Config.PIN_MEMORY   
         )
         val_loader = DataLoader(
             val_dataset, 
             batch_size=Config.BATCH_SIZE,
-            # num_workers=Config.NUM_WORKERS,#uncomment those lines if you want to use GPU
-            # pin_memory=Config.PIN_MEMORY
+
         )
         
         # Create test dataset and loader
         test_loader = DataLoader(
             test_dataset, 
             batch_size=Config.BATCH_SIZE,
-            # num_workers=Config.NUM_WORKERS,#uncomment those lines if you want to use GPU
-            # pin_memory=Config.PIN_MEMORY
         )
         
         # Train model
-        train_model(model, train_loader, val_loader)
+        train_losses, val_losses, train_metrics, val_metrics = train_model(model, train_loader, val_loader)
         
         # Load best model for testing
         model.load_state_dict(torch.load(Config.BERT_BEST_MODEL_PATH))
