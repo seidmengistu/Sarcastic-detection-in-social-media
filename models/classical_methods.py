@@ -1,51 +1,17 @@
 import os
+import numpy as np
 import pandas as pd
-from xgboost import XGBClassifier
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import GridSearchCV, KFold
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import LogisticRegression
-from sklearn.naive_bayes import MultinomialNB
 from sklearn.svm import LinearSVC
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report
 from tqdm import tqdm
 from utils.config import Config
 from utils.dataset_loader import load_data
 from utils.analysis_data import plot_training_results, get_metrics_report
 from utils.preprocessing import preprocess_text
-
-def preprocess_and_save_data():
-    """Load raw data, preprocess it, and save to processed directory"""
-    try:
-        print("Loading raw data...")
-        raw_data_path = os.path.join(Config.DATA_DIR, "raw", "dataset_unificato.csv")
-        df = pd.read_csv(raw_data_path)
-        print(f"Loaded {len(df)} rows")
-
-        print("Preprocessing data...")
-        # Convert labels
-        df['class'] = df['class'].replace({"notsarc": 0, "sarc": 1})
-        
-        # Preprocess text with progress bar
-        tqdm.pandas(desc="Processing texts")
-        df['text'] = df['text'].progress_apply(lambda x: preprocess_text(str(x)))
-        
-        # Create processed directory if it doesn't exist
-        os.makedirs(os.path.dirname(Config.PREPROCESSED_DATA_PATH), exist_ok=True)
-        
-        # Save preprocessed data
-        print(f"Saving preprocessed data to {Config.PREPROCESSED_DATA_PATH}")
-        df.to_csv(Config.PREPROCESSED_DATA_PATH, index=False)
-        print("✓ Preprocessing complete")
-        
-        return df
-        
-    except Exception as e:
-        print(f"Error in preprocessing: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return None
 
 def run():
     try:
@@ -58,6 +24,12 @@ def run():
         train_texts, train_labels = data['train']
         val_texts, val_labels = data['val']
         test_texts, test_labels = data['test']
+
+        # Convert string labels to integers and numpy arrays
+        train_labels = np.array([1 if label == 'sarc' else 0 for label in train_labels])
+        val_labels = np.array([1 if label == 'sarc' else 0 for label in val_labels])
+        test_labels = np.array([1 if label == 'sarc' else 0 for label in test_labels])
+        train_texts = np.array(train_texts)
 
         # Define models with configurations
         models_and_params = {
@@ -73,36 +45,34 @@ def run():
                     'clf__C': [0.1, 1, 10]
                 }
             },
-            "Random Forest": {
-                'model': RandomForestClassifier(random_state=42),
-                'params': {
-                    'clf__n_estimators': [100, 200],
-                    'clf__max_depth': [None, 10, 20]
-                }
-            },
-            "XGBoost": {
-                'model': XGBClassifier(use_label_encoder=False, eval_metric='logloss', random_state=42),
-                'params': {
-                    'clf__n_estimators': [100, 200],
-                    'clf__max_depth': [3, 6]
-                }
-            }
         }
+
+        # Store results for plotting
+        all_results = {}
 
         # Train and evaluate each model
         for name, mp in models_and_params.items():
-            print(f"\n🔍 Training {name}")
+            print(f"\n{'='*20} Training {name} {'='*20}")
 
             pipeline = Pipeline([
                 ('tfidf', TfidfVectorizer(max_features=10000, ngram_range=(1, 2))),
                 ('clf', mp['model'])
             ])
 
+            # Lists to store metrics for plotting
+            train_losses = []
+            val_losses = []
+            train_metrics = []
+            val_metrics = []
+
+            # Create KFold cross-validator
+            kf = KFold(n_splits=3, shuffle=True, random_state=42)
+
             # Train and validate
             grid = GridSearchCV(
                 pipeline,
                 param_grid=mp['params'],
-                cv=3,
+                cv=kf,
                 scoring='f1',
                 n_jobs=-1,
                 verbose=1
@@ -111,20 +81,83 @@ def run():
             # Fit on training data
             grid.fit(train_texts, train_labels)
 
+            # Store metrics from CV results
+            for train_idx, val_idx in kf.split(train_texts):
+                # Get predictions for this fold
+                train_fold_pred = grid.predict(train_texts[train_idx])
+                val_fold_pred = grid.predict(train_texts[val_idx])
+                
+                # Get metrics reports
+                train_report = classification_report(
+                    train_labels[train_idx],
+                    train_fold_pred,
+                    target_names=['Not Sarcastic', 'Sarcastic'],
+                    output_dict=True
+                )
+                val_report = classification_report(
+                    train_labels[val_idx],
+                    val_fold_pred,
+                    target_names=['Not Sarcastic', 'Sarcastic'],
+                    output_dict=True
+                )
+                
+                # Add true/pred pairs for confusion matrix
+                train_report['true'] = train_labels[train_idx].tolist()
+                train_report['pred'] = train_fold_pred.tolist()
+                val_report['true'] = train_labels[val_idx].tolist()
+                val_report['pred'] = val_fold_pred.tolist()
+                
+                # Store metrics
+                train_metrics.append(train_report)
+                val_metrics.append(val_report)
+                
+                # Use negative log loss as a proxy for loss
+                train_losses.append(1 - train_report['accuracy'])
+                val_losses.append(1 - val_report['accuracy'])
+
             print(f"\n✅ Best Parameters for {name}: {grid.best_params_}")
 
             # Evaluate on validation set
             val_preds = grid.predict(val_texts)
-            print(f"\n📊 Validation Report for {name}:")
-            print(get_metrics_report(val_labels, val_preds))
+            print(f"\n📊 Validation Results for {name}:")
+            print(classification_report(
+                val_labels,
+                val_preds,
+                target_names=['Not Sarcastic', 'Sarcastic'],
+                digits=4
+            ))
 
             # Evaluate on test set
             test_preds = grid.predict(test_texts)
-            print(f"\n📈 Final Test Report for {name}:")
-            print(get_metrics_report(test_labels, test_preds))
+            print(f"\n📈 Test Results for {name}:")
+            print(classification_report(
+                test_labels,
+                test_preds,
+                target_names=['Not Sarcastic', 'Sarcastic'],
+                digits=4
+            ))
 
-            # Save best model if needed
-            # torch.save(grid.best_estimator_, f'best_{name.lower().replace(" ", "_")}.pkl')
+            # Store results for plotting
+            all_results[name] = {
+                'train_losses': train_losses,
+                'val_losses': val_losses,
+                'train_metrics': train_metrics,
+                'val_metrics': val_metrics
+            }
+
+            print("=" * 60)
+
+        # Plot results for each model
+        for name, results in all_results.items():
+            save_path = f'classical_{name.lower().replace(" ", "_")}.png'
+            plot_training_results(
+                results['train_losses'],
+                results['val_losses'],
+                results['train_metrics'],
+                results['val_metrics'],
+                save_path=save_path
+            )
+            print(f"✓ Results plot saved as {save_path}")
 
     except Exception as e:
         print(f"Error in classical methods: {str(e)}")
