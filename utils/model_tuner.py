@@ -10,8 +10,7 @@ from tqdm import tqdm
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.bert_lstm_model import BertLSTMModel, SarcasmDataset
-from models.roberta_lstm_model import RoBERTaLSTMModel, SarcasmDatasetRoBERTa
-from transformers import BertTokenizer, RobertaTokenizer
+from transformers import BertTokenizer
 from utils.config import Config
 from utils.dataset_loader import load_data
 import torch.nn as nn
@@ -24,7 +23,7 @@ def load_data_once():
         raise ValueError("Could not load data")
     return data
 
-def objective(trial, data, model_type="bert"):
+def objective(trial, data):
     """Optuna objective function to minimize validation loss"""
     # Reduce parameter ranges for memory constraints
     params = {
@@ -37,19 +36,9 @@ def objective(trial, data, model_type="bert"):
         'lstm_dropout': 0.0  # No LSTM dropout needed for single layer
     }
     
-    # Set up model-specific components
-    if model_type == "bert":
-        tokenizer = BertTokenizer.from_pretrained(Config.BERT_MODEL_NAME)
-        model_class = BertLSTMModel
-        dataset_class = SarcasmDataset
-        max_length = Config.BERT_MAX_LENGTH
-        model_name = Config.BERT_MODEL_NAME
-    else:  
-        tokenizer = RobertaTokenizer.from_pretrained(Config.ROBERTA_MODEL_NAME)
-        model_class = RoBERTaLSTMModel
-        dataset_class = SarcasmDatasetRoBERTa
-        max_length = Config.ROBERTA_MAX_LENGTH
-        model_name = Config.ROBERTA_MODEL_NAME
+    # Set up BERT components
+    tokenizer = BertTokenizer.from_pretrained(Config.BERT_MODEL_NAME)
+    model_name = Config.BERT_MODEL_NAME
     
     train_texts, train_labels = data['train']
     val_texts, val_labels = data['val']
@@ -57,8 +46,8 @@ def objective(trial, data, model_type="bert"):
     train_labels = [1 if label == 'sarc' else 0 for label in train_labels]
     val_labels = [1 if label == 'sarc' else 0 for label in val_labels]
     
-    train_dataset = dataset_class(train_texts, train_labels, tokenizer)
-    val_dataset = dataset_class(val_texts, val_labels, tokenizer)
+    train_dataset = SarcasmDataset(train_texts, train_labels, tokenizer)
+    val_dataset = SarcasmDataset(val_texts, val_labels, tokenizer)
     
     train_loader = DataLoader(
         train_dataset, 
@@ -76,9 +65,7 @@ def objective(trial, data, model_type="bert"):
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     
-    model = model_class(model_name=model_name)
-    if model_type == "roberta":
-        model.roberta.gradient_checkpointing_enable()
+    model = BertLSTMModel(model_name=model_name)
     
     # Update model architecture
     model.lstm = nn.LSTM(
@@ -95,11 +82,8 @@ def objective(trial, data, model_type="bert"):
     
     model = model.to(Config.DEVICE)
     
-    # Use gradient checkpointing for both models
-    if hasattr(model, 'bert'):
-        model.bert.gradient_checkpointing_enable()
-    elif hasattr(model, 'roberta'):
-        model.roberta.gradient_checkpointing_enable()
+    # Use gradient checkpointing
+    model.bert.gradient_checkpointing_enable()
     
     # Training setup
     criterion = nn.BCEWithLogitsLoss()
@@ -152,14 +136,14 @@ def objective(trial, data, model_type="bert"):
     
     return best_val_loss
 
-def find_best_hyperparameters(model_type="bert", n_trials=5):
+def find_best_hyperparameters(n_trials=5):
     """Run hyperparameter optimization"""
     data = load_data_once()
     
     study = optuna.create_study(direction="minimize")
     
     # Create progress bar for trials
-    with tqdm(total=n_trials, desc=f"Optimizing {model_type.upper()} Model") as progress_bar:
+    with tqdm(total=n_trials, desc="Optimizing BERT Model") as progress_bar:
         def callback(study, trial):
             progress_bar.update(1)
             progress_bar.set_postfix({
@@ -168,15 +152,15 @@ def find_best_hyperparameters(model_type="bert", n_trials=5):
             })
         
         study.optimize(
-            lambda trial: objective(trial, data, model_type), 
+            lambda trial: objective(trial, data), 
             n_trials=n_trials, 
             callbacks=[callback]
         )
     
     # Save best parameters to text file
-    filename = f"best_hyperparameters_{model_type}.txt"
+    filename = "best_hyperparameters_bert.txt"
     with open(filename, "w") as f:
-        f.write(f"Best Hyperparameters for {model_type.upper()}:\n")
+        f.write("Best Hyperparameters for BERT:\n")
         f.write("-" * 20 + "\n")
         for key, value in study.best_params.items():
             f.write(f"{key}: {value}\n")
@@ -189,18 +173,11 @@ if __name__ == "__main__":
     print("=" * 40)
     
     print("\nOptimizing BERT-LSTM model...")
-    bert_params = find_best_hyperparameters("bert")
-    
-    print("\nOptimizing RoBERTa-LSTM model...")
-    roberta_params = find_best_hyperparameters("roberta")
+    bert_params = find_best_hyperparameters()
     
     print("\nOptimization Complete!")
     print("=" * 40)
     
     print("\nBest BERT hyperparameters:")
     for key, value in bert_params.items():
-        print(f"{key}: {value}")
-        
-    print("\nBest RoBERTa hyperparameters:")
-    for key, value in roberta_params.items():
         print(f"{key}: {value}") 
