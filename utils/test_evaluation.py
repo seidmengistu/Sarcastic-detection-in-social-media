@@ -5,8 +5,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from utils.config import Config
 from models.bert_lstm_model import BertLSTMModel, SarcasmDataset
-from models.roberta_lstm_model import RoBERTaLSTMModel, SarcasmDatasetRoBERTa
-from transformers import BertTokenizer, RobertaTokenizer
+from transformers import BertTokenizer
 
 def evaluate_test_set(model, test_loader, device):
     """
@@ -68,18 +67,11 @@ def evaluate_test_set(model, test_loader, device):
         traceback.print_exc()
         return None
 
-def evaluate_model(model_type="bert"):
-    """Evaluate either BERT or RoBERTa model"""
-    if model_type == "bert":
-        model = BertLSTMModel()
-        tokenizer = BertTokenizer.from_pretrained(Config.BERT_MODEL_NAME)
-        dataset_class = SarcasmDataset
-        model_path = Config.BERT_BEST_MODEL_PATH
-    else:  # roberta
-        model = RoBERTaLSTMModel()
-        tokenizer = RobertaTokenizer.from_pretrained(Config.ROBERTA_MODEL_NAME)
-        dataset_class = SarcasmDatasetRoBERTa
-        model_path = Config.ROBERTA_BEST_MODEL_PATH
+def evaluate_model():
+    """Evaluate BERT model"""
+    model = BertLSTMModel()
+    tokenizer = BertTokenizer.from_pretrained(Config.BERT_MODEL_NAME)
+    model_path = Config.BERT_BEST_MODEL_PATH
     
     model.load_state_dict(torch.load(model_path))
     model = model.to(Config.DEVICE)
@@ -90,7 +82,7 @@ def evaluate_model(model_type="bert"):
     test_labels = [1 if label == 'sarc' else 0 for label in test_labels]
     
     # Create test dataset and loader
-    test_dataset = dataset_class(test_texts, test_labels, tokenizer)
+    test_dataset = SarcasmDataset(test_texts, test_labels, tokenizer)
     test_loader = DataLoader(
         test_dataset,
         batch_size=8,
@@ -102,7 +94,7 @@ def evaluate_model(model_type="bert"):
     results = evaluate_test_set(model, test_loader, Config.DEVICE)
 
     # Print results
-    print(f"\n=== {model_type.upper()} Model Test Results ===")
+    print(f"\n=== BERT Model Test Results ===")
     print("=" * 50)
     print(f"\nAccuracy: {results['accuracy']:.4f}")
     print("\nTest Set Results:")
@@ -110,9 +102,4 @@ def evaluate_model(model_type="bert"):
     print(results)
 
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--model', type=str, choices=['bert', 'roberta'], default='bert')
-    args = parser.parse_args()
-    
-    evaluate_model(args.model)
+    evaluate_model()
