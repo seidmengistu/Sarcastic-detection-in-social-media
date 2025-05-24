@@ -5,8 +5,8 @@ class Config:
     # Essential paths
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     DATA_DIR = os.path.join(PROJECT_ROOT, "data")
-    RAW_DATA_PATH = os.path.join(DATA_DIR, "raw", "dataset_unificato.csv")
-    PREPROCESSED_DATA_PATH = os.path.join(DATA_DIR, "processed", "preprocessed_dataset.csv")
+    RAW_DATA_PATH = os.path.join(DATA_DIR, "raw", "Sarcasm_Headlines_Dataset_v2.json")
+    PREPROCESSED_DATA_PATH = os.path.join(DATA_DIR, "processed", "preprocessed_news.csv")
 
     
     # Device configuration
@@ -20,7 +20,7 @@ class Config:
     
     # RoBERTa Configuration
     ROBERTA_MODEL_NAME = 'roberta-base'
-    ROBERTA_HIDDEN_SIZE = 768
+    ROBERTA_HIDDEN_SIZE = 256
     ROBERTA_MAX_LENGTH = 128
     ROBERTA_BEST_MODEL_PATH = os.path.join(PROJECT_ROOT, "checkpoints", "best_roberta_model.pt")
     
@@ -30,19 +30,25 @@ class Config:
     VAL_FROM_TRAIN = 0.20
     
     # Model configuration
-    HIDDEN_SIZE = 512
+    HIDDEN_SIZE = 256
     INTERMEDIATE_SIZE = 128
     # Training hyperparameters
-    LEARNING_RATE = 2e-5       
-    DROPOUT_RATE = 0.3
+    LEARNING_RATE = 1.667347031092182e-05       
+    DROPOUT_RATE = 0.4699231239759112
     WEIGHT_DECAY = 0.01
     
     # Training settings
-    BATCH_SIZE = 16
+    BATCH_SIZE = 8  # Reduced batch size
+    ACCUMULATION_STEPS = 4  # Add gradient accumulation
+    
+    # Memory optimization
+    PIN_MEMORY = True
+    NUM_WORKERS = 0  # Reduce worker threads
+    
     print(f"Using device: {DEVICE}")
     
     # RoBERTa configurations
-    ROBERTA_LEARNING_RATE = 1e-5 
+    ROBERTA_LEARNING_RATE = 2e-5 
     ROBERTA_BATCH_SIZE = 8 
-    ROBERTA_DROPOUT = 0.3
+    ROBERTA_DROPOUT = 0.1
     ROBERTA_INTERMEDIATE_SIZE = 128  

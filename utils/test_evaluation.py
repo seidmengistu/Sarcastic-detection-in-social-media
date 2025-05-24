@@ -100,7 +100,7 @@ def evaluate_model(model_type="bert"):
     
     # Evaluate
     results = evaluate_test_set(model, test_loader, Config.DEVICE)
-    
+
     # Print results
     print(f"\n=== {model_type.upper()} Model Test Results ===")
     print("=" * 50)

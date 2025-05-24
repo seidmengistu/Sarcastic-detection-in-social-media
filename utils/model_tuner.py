@@ -26,12 +26,15 @@ def load_data_once():
 
 def objective(trial, data, model_type="bert"):
     """Optuna objective function to minimize validation loss"""
+    # Reduce parameter ranges for memory constraints
     params = {
         'learning_rate': trial.suggest_float('learning_rate', 1e-5, 5e-4, log=True),
-        'batch_size': trial.suggest_categorical('batch_size', [4, 8, 16]), 
-        'hidden_size': trial.suggest_categorical('hidden_size', [128, 256, 512]),  
+        'batch_size': trial.suggest_categorical('batch_size', [4, 8]),  # Reduced batch sizes
+        'hidden_size': trial.suggest_categorical('hidden_size', [128, 256]),  # Reduced hidden sizes
         'dropout_rate': trial.suggest_float('dropout_rate', 0.1, 0.5),
-        'intermediate_size': trial.suggest_categorical('intermediate_size', [64, 128, 256])  
+        'intermediate_size': trial.suggest_categorical('intermediate_size', [64, 128]),  # Reduced intermediate sizes
+        'lstm_layers': 1,  # Fixed to 1 layer
+        'lstm_dropout': 0.0  # No LSTM dropout needed for single layer
     }
     
     # Set up model-specific components
@@ -69,26 +72,34 @@ def objective(trial, data, model_type="bert"):
         pin_memory=True
     )
     
+    # Memory optimization
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    
     model = model_class(model_name=model_name)
     if model_type == "roberta":
-        model.roberta.gradient_checkpointing_enable()  
+        model.roberta.gradient_checkpointing_enable()
     
-    # Update model architecture with smaller sizes
+    # Update model architecture
     model.lstm = nn.LSTM(
         input_size=768,
         hidden_size=params['hidden_size'],
+        num_layers=params['lstm_layers'],
         batch_first=True,
         bidirectional=True
     )
+    
     model.intermediate = nn.Linear(params['hidden_size'] * 2, params['intermediate_size'])
     model.dropout = nn.Dropout(params['dropout_rate'])
     model.classifier = nn.Linear(params['intermediate_size'], 1)
     
     model = model.to(Config.DEVICE)
     
-    # Clear GPU memory before training
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    # Use gradient checkpointing for both models
+    if hasattr(model, 'bert'):
+        model.bert.gradient_checkpointing_enable()
+    elif hasattr(model, 'roberta'):
+        model.roberta.gradient_checkpointing_enable()
     
     # Training setup
     criterion = nn.BCEWithLogitsLoss()
@@ -97,7 +108,7 @@ def objective(trial, data, model_type="bert"):
     
     best_val_loss = float('inf')
     
-    for epoch in range(3):
+    for epoch in range(1):
         model.train()
         total_loss = 0
         
@@ -141,7 +152,7 @@ def objective(trial, data, model_type="bert"):
     
     return best_val_loss
 
-def find_best_hyperparameters(model_type="bert", n_trials=2):
+def find_best_hyperparameters(model_type="bert", n_trials=5):
     """Run hyperparameter optimization"""
     data = load_data_once()
     
