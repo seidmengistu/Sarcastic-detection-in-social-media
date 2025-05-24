@@ -26,3 +26,7 @@ class Config:
     DROPOUT_RATE = 0.4699231239759112
     WEIGHT_DECAY = 0.01
     BATCH_SIZE = 8 
+
+    # Plotting configuration
+    FIGURE_SIZE = (15, 10)
+    DPI = 100 
