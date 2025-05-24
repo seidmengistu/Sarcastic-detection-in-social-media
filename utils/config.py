@@ -38,12 +38,12 @@ class Config:
     WEIGHT_DECAY = 0.01
     
     # Training settings
-    BATCH_SIZE = 8  # Reduced batch size
-    ACCUMULATION_STEPS = 4  # Add gradient accumulation
+    BATCH_SIZE = 8  
+    ACCUMULATION_STEPS = 4 
     
     # Memory optimization
     PIN_MEMORY = True
-    NUM_WORKERS = 0  # Reduce worker threads
+    NUM_WORKERS = 0 
     
     print(f"Using device: {DEVICE}")
     
