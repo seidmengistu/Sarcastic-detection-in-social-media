@@ -75,7 +75,7 @@ def evaluate_model():
     
     model.load_state_dict(torch.load(model_path))
     model = model.to(Config.DEVICE)
-    
+
     from utils.dataset_loader import load_data
     data = load_data(preprocessed=True)
     test_texts, test_labels = data['test']

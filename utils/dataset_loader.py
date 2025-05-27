@@ -24,7 +24,6 @@ def preprocess_and_save_data():
         # Create processed directory if it doesn't exist
         os.makedirs(os.path.dirname(Config.PREPROCESSED_DATA_PATH), exist_ok=True)
         
-        # Save preprocessed data
         print(f"Saving preprocessed data to {Config.PREPROCESSED_DATA_PATH}")
         df.to_csv(Config.PREPROCESSED_DATA_PATH, index=False)
         print("✓ Preprocessing complete")
@@ -40,7 +39,6 @@ def preprocess_and_save_data():
 def load_data(preprocessed=True):
     """Load and split dataset."""
     try:
-        # Load appropriate dataset
         data_path = Config.PREPROCESSED_DATA_PATH if preprocessed else Config.RAW_DATA_PATH
         print(f"Loading data from: {data_path}")
         df = pd.read_csv(data_path)

@@ -23,145 +23,105 @@ def load_data_once():
         raise ValueError("Could not load data")
     return data
 
-def objective(trial, data):
-    """Optuna objective function to minimize validation loss"""
-    # Reduce parameter ranges for memory constraints
+def objective(trial):
+    # Define hyperparameter search space
     params = {
-        'learning_rate': trial.suggest_float('learning_rate', 1e-5, 5e-4, log=True),
-        'batch_size': trial.suggest_categorical('batch_size', [4, 8]),  # Reduced batch sizes
-        'hidden_size': trial.suggest_categorical('hidden_size', [128, 256]),  # Reduced hidden sizes
-        'dropout_rate': trial.suggest_float('dropout_rate', 0.1, 0.5),
-        'intermediate_size': trial.suggest_categorical('intermediate_size', [64, 128]),  # Reduced intermediate sizes
-        'lstm_layers': 1,  # Fixed to 1 layer
-        'lstm_dropout': 0.0  # No LSTM dropout needed for single layer
+        'learning_rate': trial.suggest_float('learning_rate', 1e-6, 1e-4, log=True),
+        'batch_size': trial.suggest_categorical('batch_size', [8, 16, 32]),
+        'lstm_hidden_size': trial.suggest_categorical('lstm_hidden_size', [256, 384, 512]),
+        'intermediate_size': trial.suggest_categorical('intermediate_size', [128, 256]),
+        'dropout_rate': trial.suggest_float('dropout_rate', 0.2, 0.5),
+        'weight_decay': trial.suggest_float('weight_decay', 0.01, 0.05),
+        'frozen_layers': trial.suggest_int('frozen_layers', 6, 9),  # Number of BERT layers to freeze
     }
     
-    # Set up BERT components
-    tokenizer = BertTokenizer.from_pretrained(Config.BERT_MODEL_NAME)
-    model_name = Config.BERT_MODEL_NAME
+    # Create model with trial parameters
+    model = BertLSTMModel()
     
-    train_texts, train_labels = data['train']
-    val_texts, val_labels = data['val']
-    
-    train_labels = [1 if label == 'sarc' else 0 for label in train_labels]
-    val_labels = [1 if label == 'sarc' else 0 for label in val_labels]
-    
-    train_dataset = SarcasmDataset(train_texts, train_labels, tokenizer)
-    val_dataset = SarcasmDataset(val_texts, val_labels, tokenizer)
-    
-    train_loader = DataLoader(
-        train_dataset, 
-        batch_size=params['batch_size'], 
-        shuffle=True,
-        pin_memory=True
-    )
-    val_loader = DataLoader(
-        val_dataset, 
-        batch_size=params['batch_size'],
-        pin_memory=True
-    )
-    
-    # Memory optimization
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    
-    model = BertLSTMModel(model_name=model_name)
-    
-    # Update model architecture
-    model.lstm = nn.LSTM(
-        input_size=768,
-        hidden_size=params['hidden_size'],
-        num_layers=params['lstm_layers'],
-        batch_first=True,
-        bidirectional=True
-    )
-    
-    model.intermediate = nn.Linear(params['hidden_size'] * 2, params['intermediate_size'])
-    model.dropout = nn.Dropout(params['dropout_rate'])
-    model.classifier = nn.Linear(params['intermediate_size'], 1)
-    
+    # Freeze BERT layers according to trial
+    for param in model.bert.embeddings.parameters():
+        param.requires_grad = False
+    for i in range(params['frozen_layers']):
+        for param in model.bert.encoder.layer[i].parameters():
+            param.requires_grad = False
+            
     model = model.to(Config.DEVICE)
-    
-    # Use gradient checkpointing
-    model.bert.gradient_checkpointing_enable()
     
     # Training setup
     criterion = nn.BCEWithLogitsLoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=params['learning_rate'])
-    scaler = GradScaler()
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=params['learning_rate'],
+        weight_decay=params['weight_decay']
+    )
     
+    # Early stopping setup
     best_val_loss = float('inf')
+    patience = 2
+    patience_counter = 0
     
-    for epoch in range(1):
+    # Training loop
+    for epoch in range(Config.NUM_EPOCHS):
         model.train()
-        total_loss = 0
+        train_loss = 0
         
         for batch in train_loader:
-            input_ids = batch['input_ids'].to(Config.DEVICE)
-            attention_mask = batch['attention_mask'].to(Config.DEVICE)
+            optimizer.zero_grad()
+            ids = batch['input_ids'].to(Config.DEVICE)
+            mask = batch['attention_mask'].to(Config.DEVICE)
             labels = batch['label'].to(Config.DEVICE)
             
-            with autocast(device_type='cuda'):
-                outputs = model(input_ids, attention_mask)
-                loss = criterion(outputs.view(-1), labels)
+            outputs = model(ids, mask)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
             
-            optimizer.zero_grad()
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            train_loss += loss.item()
             
-            total_loss += loss.item()
-        
+        # Validation phase
         model.eval()
         val_loss = 0
-        
         with torch.no_grad():
-            with autocast(device_type='cuda'):
-                for batch in val_loader:
-                    input_ids = batch['input_ids'].to(Config.DEVICE)
-                    attention_mask = batch['attention_mask'].to(Config.DEVICE)
-                    labels = batch['label'].to(Config.DEVICE)
-                    
-                    outputs = model(input_ids, attention_mask)
-                    val_loss += criterion(outputs.view(-1), labels).item()
+            for batch in val_loader:
+                ids = batch['input_ids'].to(Config.DEVICE)
+                mask = batch['attention_mask'].to(Config.DEVICE)
+                labels = batch['label'].to(Config.DEVICE)
+                
+                outputs = model(ids, mask)
+                val_loss += criterion(outputs, labels).item()
         
-        val_loss /= len(val_loader)
+        avg_val_loss = val_loss / len(val_loader)
         
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
+        # Early stopping check
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            patience_counter = 0
+        else:
+            patience_counter += 1
+            if patience_counter >= patience:
+                break
         
-        trial.report(val_loss, epoch)
+        # Report to Optuna
+        trial.report(avg_val_loss, epoch)
         if trial.should_prune():
             raise optuna.TrialPruned()
     
     return best_val_loss
 
-def find_best_hyperparameters(n_trials=5):
-    """Run hyperparameter optimization"""
-    data = load_data_once()
-    
+def find_best_hyperparameters(n_trials=20):
     study = optuna.create_study(direction="minimize")
+    study.optimize(objective, n_trials=n_trials)
     
-    # Create progress bar for trials
-    with tqdm(total=n_trials, desc="Optimizing BERT Model") as progress_bar:
-        def callback(study, trial):
-            progress_bar.update(1)
-            progress_bar.set_postfix({
-                'trial': f'{trial.number + 1}/{n_trials}',
-                'best_loss': f'{study.best_value:.4f}'
-            })
-        
-        study.optimize(
-            lambda trial: objective(trial, data), 
-            n_trials=n_trials, 
-            callbacks=[callback]
-        )
+    print("\nBest hyperparameters found:")
+    print("-" * 40)
+    for key, value in study.best_params.items():
+        print(f"{key}: {value}")
+    print(f"\nBest validation loss: {study.best_value:.4f}")
     
-    # Save best parameters to text file
-    filename = "best_hyperparameters_bert.txt"
-    with open(filename, "w") as f:
-        f.write("Best Hyperparameters for BERT:\n")
-        f.write("-" * 20 + "\n")
+    # Save best parameters
+    with open("best_hyperparameters.txt", "w") as f:
+        f.write("Best Hyperparameters:\n")
+        f.write("-" * 40 + "\n")
         for key, value in study.best_params.items():
             f.write(f"{key}: {value}\n")
         f.write(f"\nBest validation loss: {study.best_value:.4f}")

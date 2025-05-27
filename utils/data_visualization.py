@@ -75,7 +75,6 @@ def visualize_dataset_splits(save_path='dataset_distribution.pdf'):
                             autopct='%1.1f%%', colors=colors)
             pie_axes[idx].set_title(f'{split_name} Set')
         
-        # Save  charts
         pie_fig.tight_layout(pad=3.0)
         pie_fig.savefig('split_distribution_pies.pdf', bbox_inches='tight', dpi=300)
         plt.close('all')

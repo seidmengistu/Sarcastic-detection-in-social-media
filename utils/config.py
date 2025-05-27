@@ -10,23 +10,23 @@ class Config:
     DATA_DIR = os.path.join(PROJECT_ROOT, "data")
     RAW_DATA_PATH = os.path.join(DATA_DIR, "raw", "Sarcasm_Headlines_Dataset_v2.json")
     PREPROCESSED_DATA_PATH = os.path.join(DATA_DIR, "processed", "preprocessed_news.csv")
-    
-    # BERT Configuration
+
+    # BERT + LSTM sizes
     BERT_BEST_MODEL_PATH = os.path.join(PROJECT_ROOT, "checkpoints", "best_bert_model.pt")
     BERT_MODEL_NAME = 'bert-base-uncased'
-    BERT_HIDDEN_SIZE = 768
-    INTERMEDIATE_SIZE = 128
-    BERT_MAX_LENGTH = 128
+    BERT_MAX_LENGTH = 128    
+    LSTM_HIDDEN_SIZE = 384    
+    INTERMEDIATE_SIZE = 192  
     TRAIN_VAL_SIZE = 0.80
     VAL_FROM_TRAIN = 0.20
-    NUM_EPOCHS = 3
-        
+    
     # Training hyperparameters
-    LEARNING_RATE = 1.667347031092182e-05       
-    DROPOUT_RATE = 0.4699231239759112
-    WEIGHT_DECAY = 0.01
-    BATCH_SIZE = 8 
+    NUM_EPOCHS = 5
+    BATCH_SIZE = 16
+    LEARNING_RATE = 8e-6
+    DROPOUT_RATE = 0.45
+    WEIGHT_DECAY = 0.025
 
-    # Plotting configuration
-    FIGURE_SIZE = (15, 10)
-    DPI = 100 
+    # Plotting parameters
+    FIGURE_SIZE = (10, 5)
+    DPI = 100
