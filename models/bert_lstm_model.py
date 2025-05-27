@@ -87,13 +87,6 @@ def train(model, train_loader, val_loader):
         weight_decay=Config.WEIGHT_DECAY
     )
     
-    # # scheduler
-    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    #     optimizer,
-    #     mode='min',
-    #     factor=0.5,
-    #     patience=1
-    # )
 
     best_val_loss = float('inf')
     patience = 2
@@ -186,9 +179,7 @@ def train(model, train_loader, val_loader):
         })
         val_metrics.append(v_report)
 
-        # Update learning rate based on validation loss
-        # scheduler.step(avg_val)
-        
+
         if avg_val < best_val_loss:
             best_val_loss = avg_val
             patience_counter = 0
