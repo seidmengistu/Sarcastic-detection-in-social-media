@@ -37,7 +37,7 @@ class SarcasmDataset(Dataset):
         }
 
 
-class BertLSTMClassifier(nn.Module):
+class BertLSTMModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.bert = BertModel.from_pretrained(Config.BERT_MODEL_NAME)
@@ -45,7 +45,7 @@ class BertLSTMClassifier(nn.Module):
         # Freeze BERT layers
         for param in self.bert.embeddings.parameters():
             param.requires_grad = False
-        for i in range(9):
+        for i in range(8):
             for param in self.bert.encoder.layer[i].parameters():
               param.requires_grad = False
             
@@ -223,7 +223,7 @@ def run():
                 data[split] = (texts, [1 if l=='sarc' else 0 for l in lbls])
         
         tokenizer = BertTokenizer.from_pretrained(Config.BERT_MODEL_NAME)
-        model = BertLSTMClassifier().to(Config.DEVICE)
+        model = BertLSTMModel().to(Config.DEVICE)
         
         loaders = {}
         for name in ['train','val','test']:

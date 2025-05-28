@@ -24,6 +24,24 @@ def load_data_once():
     return data
 
 def objective(trial):
+    # Load and prepare data first
+    data = load_data(preprocessed=True)
+    if not data:
+        raise ValueError("Could not load data")
+    
+    # Convert string labels to ints if needed
+    for split in ['train', 'val']:
+        texts, lbls = data[split]
+        if isinstance(lbls[0], str):
+            data[split] = (texts, [1 if l=='sarc' else 0 for l in lbls])
+    
+    # Initialize tokenizer
+    tokenizer = BertTokenizer.from_pretrained(Config.BERT_MODEL_NAME)
+    
+    # Create data loaders
+    train_dataset = SarcasmDataset(*data['train'], tokenizer)
+    val_dataset = SarcasmDataset(*data['val'], tokenizer)
+    
     # Define hyperparameter search space
     params = {
         'learning_rate': trial.suggest_float('learning_rate', 1e-6, 1e-4, log=True),
@@ -34,6 +52,18 @@ def objective(trial):
         'weight_decay': trial.suggest_float('weight_decay', 0.01, 0.05),
         'frozen_layers': trial.suggest_int('frozen_layers', 6, 9),  # Number of BERT layers to freeze
     }
+    
+    # Create data loaders with trial batch size
+    train_loader = DataLoader(
+        train_dataset, 
+        batch_size=params['batch_size'], 
+        shuffle=True
+    )
+    val_loader = DataLoader(
+        val_dataset, 
+        batch_size=params['batch_size'], 
+        shuffle=False
+    )
     
     # Create model with trial parameters
     model = BertLSTMModel()
