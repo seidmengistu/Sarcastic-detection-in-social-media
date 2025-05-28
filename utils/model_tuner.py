@@ -90,12 +90,16 @@ def objective(trial):
     patience = 2
     patience_counter = 0
     
+    print(f"\nTrial {trial.number + 1} Training Progress:")
+    
     # Training loop
-    for epoch in range(Config.NUM_EPOCHS):
+    for epoch in tqdm(range(Config.NUM_EPOCHS), desc="Epochs"):
         model.train()
         train_loss = 0
         
-        for batch in train_loader:
+        # Add progress bar for training batches
+        train_pbar = tqdm(train_loader, desc=f"Training", leave=False)
+        for batch in train_pbar:
             optimizer.zero_grad()
             ids = batch['input_ids'].to(Config.DEVICE)
             mask = batch['attention_mask'].to(Config.DEVICE)
@@ -107,18 +111,22 @@ def objective(trial):
             optimizer.step()
             
             train_loss += loss.item()
+            train_pbar.set_postfix({'loss': f'{loss.item():.4f}'})
             
         # Validation phase
         model.eval()
         val_loss = 0
+        val_pbar = tqdm(val_loader, desc="Validation", leave=False)
         with torch.no_grad():
-            for batch in val_loader:
+            for batch in val_pbar:
                 ids = batch['input_ids'].to(Config.DEVICE)
                 mask = batch['attention_mask'].to(Config.DEVICE)
                 labels = batch['label'].to(Config.DEVICE)
                 
                 outputs = model(ids, mask)
-                val_loss += criterion(outputs, labels).item()
+                loss = criterion(outputs, labels)
+                val_loss += loss.item()
+                val_pbar.set_postfix({'loss': f'{loss.item():.4f}'})
         
         avg_val_loss = val_loss / len(val_loader)
         
@@ -129,6 +137,7 @@ def objective(trial):
         else:
             patience_counter += 1
             if patience_counter >= patience:
+                print("\nEarly stopping triggered!")
                 break
         
         # Report to Optuna
@@ -154,7 +163,14 @@ def find_best_hyperparameters(n_trials=20):
         print("-" * 50)
     
     study = optuna.create_study(direction="minimize")
-    study.optimize(objective, n_trials=n_trials, callbacks=[print_trial_callback])
+    
+    # Wrap the optimization in a progress bar
+    with tqdm(total=n_trials, desc="Total Trials") as pbar:
+        def update_pbar_callback(study, trial):
+            pbar.update(1)
+            print_trial_callback(study, trial)
+            
+        study.optimize(objective, n_trials=n_trials, callbacks=[update_pbar_callback])
     
     print("\nOptimization Complete!")
     print("=" * 50)
