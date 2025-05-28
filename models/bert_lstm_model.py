@@ -9,7 +9,7 @@ from sklearn.metrics import classification_report
 from utils.config import Config
 from utils.dataset_loader import load_data
 from utils.evaluation_utils import evaluate_model_predictions
-
+from utils.analysis_data import plot_training_results
 
 class SarcasmDataset(Dataset):
     def __init__(self, texts, labels, tokenizer):
@@ -198,7 +198,6 @@ def train(model, train_loader, val_loader):
         ))
 
     # Plot training results
-    from utils.analysis_data import plot_training_results
     plot_training_results(
         train_losses,
         val_losses,
