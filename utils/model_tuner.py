@@ -139,9 +139,25 @@ def objective(trial):
     return best_val_loss
 
 def find_best_hyperparameters(n_trials=20):
-    study = optuna.create_study(direction="minimize")
-    study.optimize(objective, n_trials=n_trials)
+    print(f"\nRunning {n_trials} trials...")
+    print("=" * 50)
     
+    def print_trial_callback(study, trial):
+        print(f"\nTrial {trial.number + 1}/{n_trials} completed")
+        print(f"Current trial value (validation loss): {trial.value:.4f}")
+        
+        if study.best_trial == trial:
+            print("✨ New best trial!")
+            print(f"Best parameters so far:")
+            for key, value in trial.params.items():
+                print(f"  {key}: {value}")
+        print("-" * 50)
+    
+    study = optuna.create_study(direction="minimize")
+    study.optimize(objective, n_trials=n_trials, callbacks=[print_trial_callback])
+    
+    print("\nOptimization Complete!")
+    print("=" * 50)
     print("\nBest hyperparameters found:")
     print("-" * 40)
     for key, value in study.best_params.items():
