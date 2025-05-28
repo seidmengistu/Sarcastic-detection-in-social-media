@@ -45,7 +45,7 @@ class BertLSTMModel(nn.Module):
         # Freeze BERT layers
         for param in self.bert.embeddings.parameters():
             param.requires_grad = False
-        for i in range(8):
+        for i in range(6):
             for param in self.bert.encoder.layer[i].parameters():
               param.requires_grad = False
             

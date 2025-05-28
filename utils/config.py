@@ -15,17 +15,17 @@ class Config:
     BERT_BEST_MODEL_PATH = os.path.join(PROJECT_ROOT, "checkpoints", "best_bert_model.pt")
     BERT_MODEL_NAME = 'bert-base-uncased'
     BERT_MAX_LENGTH = 128    
-    LSTM_HIDDEN_SIZE = 384    
-    INTERMEDIATE_SIZE = 192  
+    LSTM_HIDDEN_SIZE = 256    
+    INTERMEDIATE_SIZE = 256  
     TRAIN_VAL_SIZE = 0.80
     VAL_FROM_TRAIN = 0.20
     
     # Training hyperparameters
     NUM_EPOCHS = 5
     BATCH_SIZE = 16
-    LEARNING_RATE = 8e-6
-    DROPOUT_RATE = 0.45
-    WEIGHT_DECAY = 0.025
+    LEARNING_RATE = 4.20e-5
+    DROPOUT_RATE = 0.269
+    WEIGHT_DECAY = 0.0403
 
     # Plotting parameters
     FIGURE_SIZE = (10, 5)

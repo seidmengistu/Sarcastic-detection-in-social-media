@@ -1,149 +1,140 @@
+```markdown
 # Sarcasm Detection in Social Media
 
-This project implements deep learning and classical machine learning methods to detect sarcasm in social media text using BERT-BiLSTM and traditional approaches.
+This project explores both classical and deep-learning methods for detecting sarcasm in social-media text, focusing on a hybrid **BERT-BiLSTM** architecture that combines pretrained contextual embeddings with sequential modeling. On the News Headlines dataset (26 709 examples from The Onion vs. mainstream sources), our best model achieves **93.0 % test accuracy** and a **0.93 macro-F1** score, outperforming prior hybrid CNN-LSTM baselines (89.7 % accuracy) :contentReference[oaicite:0]{index=0}.
 
 ## Project Structure
 
 ```
+
 ├── data/
-│   ├── processed/
-│   │   └── preprocessed_dataset.csv
-│   └── raw/
-│       └── dataset_unificato.csv
+│   ├── raw/ … original JSON headlines
+│   └── processed/
+│       └── preprocessed\_news.csv  
+│           
 ├── models/
-│   ├── bert_lstm_model.py      # BERT-BiLSTM implementation
-│   └── classical_methods.py
+│   ├── bert\_lstm\_model.py     … BERT-BiLSTM implementation
+│   └── classical\_methods.py   … TF-IDF + Logistic Regression / SVM
 ├── utils/
-│   ├── config.py              # Configuration settings
-│   ├── dataset_loader.py      # Data loading and splitting
-│   ├── evaluation_utils.py    # Evaluation metrics and visualization
-│   ├── preprocess_news.py     # News dataset preprocessing
-│   ├── test_evaluation.py     # Model testing utilities
-│   ├── model_tuner.py        # Hyperparameter optimization
-│   ├── preprocessing.py       # Text preprocessing utilities
-│   ├── analysis_data.py      # Training analysis and plotting
-│   ├── data_visualization.py # Dataset visualization
-│   └── word_cloud.py         # Word cloud generation
-├── main.py
-└── requirements.txt
-```
+│   ├── config.py              … all hyperparameters, paths, and device settings
+│   ├── dataset\_loader.py      … stratified train/val/test split
+│   ├── preprocessing.py       … text cleaning, emoji demojization, URL masking
+│   ├── preprocess\_news.py     … news-specific normalization
+│   ├── model\_tuner.py         … Optuna hyperparameter search
+│   ├── evaluation\_utils.py    … metrics, classification reports, confusion matrices
+│   ├── analysis\_data.py       … loss/F1 plotting (training curves)
+│   ├── data\_visualization.py  … class distribution and exploratory plots
+│   └── word\_cloud.py          … word-cloud generation
+├── main.py                    … end-to-end training and evaluation script
+└── requirements.txt           … exact versions of PyTorch, Transformers, scikit-learn, spaCy, Optuna, etc.
+
+````
+
+## Dataset
+
+We use the **News Headlines** corpus (Kaggle), containing 26 709 JSON‐formatted headlines labeled `sarc` or `notsarc`. After preprocessing and splitting, we have 18 316 training, 4 579 validation, and 5 724 test examples :contentReference[oaicite:2]{index=2}.
+
+## Preprocessing
+
+- **Text cleaning**: Unicode normalization, lowercase (for uncased BERT), removal/masking of URLs and user mentions, conversion of emojis to text, contraction expansion, stripping special characters.  
+- **Classical pipeline**: Stop-word removal, lemmatization, TF-IDF vectorization (unigrams + bigrams, max_features=10 000).  
+- **Transformer pipeline**: BERT tokenization (max_length=128), padding/truncation, attention masks.
 
 ## Models
 
-### BERT-BiLSTM Architecture
+### Classical Baselines
 
-- Uses BERT-base-uncased as the encoder for contextual embeddings
-- Enhanced with a Bidirectional LSTM (BiLSTM) layer for sequence processing
-  - Processes sequences in both forward and backward directions
-  - Captures contextual dependencies from both past and future tokens
-- Includes intermediate linear layer for feature transformation
-- Employs dropout for regularization and overfitting prevention
-- Features mixed precision training for computational efficiency
-- Uses gradient checkpointing to optimize memory usage
+- **Logistic Regression** and **Linear SVM** on TF-IDF features  
+- Hyperparameter tuning via 3-fold `GridSearchCV` optimizing macro-F1  
+- Balanced class weights to mitigate skew  
 
-### Classical Methods
+### BERT-BiLSTM Hybrid
 
-- Logistic Regression with TF-IDF features
-- Support Vector Machine (SVM) with TF-IDF features
-- Includes grid search for hyperparameter optimization
-- Balanced class weights for handling imbalanced data
+- **BERT-base-uncased** with first six layers frozen for efficiency  
+- **Bidirectional LSTM** (hidden_size=256) on top of BERT’s last hidden states  
+- **Intermediate linear layer** (256 units) + ReLU + dropout (0.269)  
+- Final sigmoid output for binary classification  
+- **Loss**: BCEWithLogitsLoss; **Optimizer**: AdamW (lr=4.20×10⁻⁵, weight_decay=0.0403)  
+- **Early stopping** (patience=1) over 5 epochs; best model saved by lowest validation loss :contentReference[oaicite:3]{index=3}.
 
-## Features
+## Hyperparameter Optimization
 
-- Comprehensive evaluation metrics
-- Confusion matrix visualization
-- Word cloud generation for data analysis
-- Training progress visualization
-- Dataset distribution analysis
-- Hyperparameter optimization
+We ran **6 Optuna trials** (≈ 7 h) over this search space:
+
+| Hyperparameter       | Search Space                      |
+|:---------------------|:----------------------------------|
+| learning_rate        | [1e−6, 1e−4] (log-uniform)        |
+| batch_size           | {8, 16, 32}                       |
+| lstm_hidden_size     | {256, 384, 512}                   |
+| intermediate_size    | {128, 256}                        |
+| dropout_rate         | [0.2, 0.5]                        |
+| weight_decay         | [0.01, 0.05]                      |
+| frozen_layers        | {6, 7, 8, 9}                      |
+
+The best configuration (val loss = 0.1798) was:  
+- **lr** = 4.20×10⁻⁵  
+- **batch_size** = 16  
+- **hidden_size** = 256  
+- **intermediate_size** = 256  
+- **dropout** = 0.269  
+- **weight_decay** = 0.0403  
+- **frozen_layers** = 6 :contentReference[oaicite:4]{index=4}
+
+## Performance
+
+### Validation (Epoch 2)
+
+- **Train loss** ↓ from 0.2887 → 0.1585   
+- **Val loss** ↓ to 0.1756 (best)  
+- **Macro-F1** → 0.9326  
+- Precision/Recall for both classes ≈ 0.93 :contentReference[oaicite:5]{index=5}
+
+### Test
+
+| Metric        | Not Sarc. | Sarc. | Overall |
+|:--------------|:---------:|:-----:|:-------:|
+| Precision     | 0.93      | 0.93  |         |
+| Recall        | 0.94      | 0.92  |         |
+| **F1-Score**  | 0.93      | 0.92  | **0.93**|
+| **Accuracy**  |           |       | **0.93**| :contentReference[oaicite:6]{index=6}
+
+### Comparison
+
+| Model                              | Test Accuracy |
+|:-----------------------------------|:--------------|
+| Misra & Arora (CNN-LSTM hybrid)    | 89.7 %        |
+| **This work (BERT-BiLSTM)**        | **93.0 %**    :contentReference[oaicite:7]{index=7}
 
 ## Usage
 
-1. **Data Preprocessing**:
+1. **Install dependencies**  
+   ```bash
+   pip install -r requirements.txt
+   python -m spacy download en_core_web_sm
+````
+
+2. **Preprocess data**
 
    ```bash
-   # Preprocess the news headlines dataset
    python utils/preprocess_news.py
-
-   # Run text preprocessing
    python utils/preprocessing.py
    ```
-
-2. **Data Analysis and Visualization**:
+3. **Visualize / Analyze**
 
    ```bash
-   # Generate word clouds for analysis
    python utils/word_cloud.py
-
-   # Visualize dataset distribution
    python utils/data_visualization.py
    ```
-
-3. **Model Tuning**:
+4. **Hyperparameter tuning**
 
    ```bash
-   # Run hyperparameter optimization for BERT-BiLSTM
    python utils/model_tuner.py
    ```
-
-4. **Training Models**:
+5. **Train & evaluate**
 
    ```bash
-   # Train both BERT-BiLSTM and classical models
    python main.py
-   ```
-
-5. **Model Evaluation**:
-   ```bash
-   # Evaluate BERT-BiLSTM model
    python -m utils.test_evaluation
    ```
 
-## Utility Files Description
 
-- **config.py**: Central configuration file containing model parameters, paths, and training settings
-- **dataset_loader.py**: Handles data loading, splitting into train/val/test sets, and preprocessing
-- **evaluation_utils.py**: Contains functions for model evaluation, metrics calculation, and visualization
-- **preprocess_news.py**: Specific preprocessing for news headlines dataset
-- **test_evaluation.py**: Comprehensive model evaluation on test set
-- **model_tuner.py**: Implements Optuna-based hyperparameter optimization
-- **preprocessing.py**: Text preprocessing utilities including cleaning and normalization
-- **analysis_data.py**: Training progress visualization and analysis tools
-- **data_visualization.py**: Dataset statistics and distribution visualization
-- **word_cloud.py**: Word cloud generation for text analysis
-
-## Model Performance Metrics
-
-Models are evaluated using:
-
-- Accuracy
-- Precision
-- Recall
-- F1-score
-- Confusion Matrix
-
-Results are saved and visualized for both training and validation phases.
-
-## Configuration
-
-Key configurations in `utils/config.py`:
-
-- Model architecture parameters (BERT-BiLSTM settings)
-- Training hyperparameters
-- Data paths
-- GPU/CPU settings
-- Visualization settings
-
-## Requirements
-
-- PyTorch
-- Transformers
-- scikit-learn
-- pandas
-- numpy
-- tqdm
-- matplotlib
-- seaborn
-- wordcloud
-- optuna
-- spacy

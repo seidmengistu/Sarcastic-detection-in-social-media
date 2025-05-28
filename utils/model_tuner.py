@@ -147,7 +147,7 @@ def objective(trial):
     
     return best_val_loss
 
-def find_best_hyperparameters(n_trials=20):
+def find_best_hyperparameters(n_trials=6):
     print(f"\nRunning {n_trials} trials...")
     print("=" * 50)
     
