@@ -1,38 +1,36 @@
-```markdown
+
 # Sarcasm Detection in Social Media
 
-This project explores both classical and deep-learning methods for detecting sarcasm in social-media text, focusing on a hybrid **BERT-BiLSTM** architecture that combines pretrained contextual embeddings with sequential modeling. On the News Headlines dataset (26 709 examples from The Onion vs. mainstream sources), our best model achieves **93.0 % test accuracy** and a **0.93 macro-F1** score, outperforming prior hybrid CNN-LSTM baselines (89.7 % accuracy) :contentReference[oaicite:0]{index=0}.
+This project explores both classical and deep-learning methods for detecting sarcasm in social-media text, focusing on a hybrid **BERT-BiLSTM** architecture that combines pretrained contextual embeddings with sequential modeling. On the News Headlines dataset (26 709 examples from The Onion vs. mainstream sources), our best model achieves **93.0 % test accuracy** and a **0.93 macro-F1** score, outperforming prior hybrid CNN-LSTM baselines (89.7 % accuracy).
 
 ## Project Structure
 
 ```
-
 ├── data/
-│   ├── raw/ … original JSON headlines
+│   ├── raw/ … original JSON headlines  
 │   └── processed/
-│       └── preprocessed\_news.csv  
-│           
+│       └── preprocessed_news.csv  … 26,709 headlines, split 64%/16%/20%  
+│           └── train: 18 316 | val: 4 579 | test: 5 724
 ├── models/
-│   ├── bert\_lstm\_model.py     … BERT-BiLSTM implementation
-│   └── classical\_methods.py   … TF-IDF + Logistic Regression / SVM
+│   ├── bert_lstm_model.py     … BERT-BiLSTM implementation  
+│   └── classical_methods.py   … TF-IDF + Logistic Regression / SVM  
 ├── utils/
-│   ├── config.py              … all hyperparameters, paths, and device settings
-│   ├── dataset\_loader.py      … stratified train/val/test split
-│   ├── preprocessing.py       … text cleaning, emoji demojization, URL masking
-│   ├── preprocess\_news.py     … news-specific normalization
-│   ├── model\_tuner.py         … Optuna hyperparameter search
-│   ├── evaluation\_utils.py    … metrics, classification reports, confusion matrices
-│   ├── analysis\_data.py       … loss/F1 plotting (training curves)
-│   ├── data\_visualization.py  … class distribution and exploratory plots
-│   └── word\_cloud.py          … word-cloud generation
-├── main.py                    … end-to-end training and evaluation script
+│   ├── config.py              … all hyperparameters, paths, and device settings  
+│   ├── dataset_loader.py      … stratified train/val/test split  
+│   ├── preprocessing.py       … text cleaning, emoji demojization, URL masking  
+│   ├── preprocess_news.py     … news-specific normalization  
+│   ├── model_tuner.py         … Optuna hyperparameter search  
+│   ├── evaluation_utils.py    … metrics, classification reports, confusion matrices  
+│   ├── analysis_data.py       … loss/F1 plotting (training curves)  
+│   ├── data_visualization.py  … class distribution and exploratory plots  
+│   └── word_cloud.py          … word-cloud generation  
+├── main.py                    … end-to-end training and evaluation script  
 └── requirements.txt           … exact versions of PyTorch, Transformers, scikit-learn, spaCy, Optuna, etc.
-
-````
+```
 
 ## Dataset
 
-We use the **News Headlines** corpus (Kaggle), containing 26 709 JSON‐formatted headlines labeled `sarc` or `notsarc`. After preprocessing and splitting, we have 18 316 training, 4 579 validation, and 5 724 test examples :contentReference[oaicite:2]{index=2}.
+We use the **News Headlines** corpus (Kaggle), containing 26 709 JSON‐formatted headlines labeled `sarc` or `notsarc`. After preprocessing and splitting, we have 18 316 training, 4 579 validation, and 5 724 test examples.
 
 ## Preprocessing
 
@@ -55,7 +53,7 @@ We use the **News Headlines** corpus (Kaggle), containing 26 709 JSON‐formatte
 - **Intermediate linear layer** (256 units) + ReLU + dropout (0.269)  
 - Final sigmoid output for binary classification  
 - **Loss**: BCEWithLogitsLoss; **Optimizer**: AdamW (lr=4.20×10⁻⁵, weight_decay=0.0403)  
-- **Early stopping** (patience=1) over 5 epochs; best model saved by lowest validation loss :contentReference[oaicite:3]{index=3}.
+- **Early stopping** (patience=1) over 5 epochs; best model saved by lowest validation loss
 
 ## Hyperparameter Optimization
 
@@ -78,7 +76,7 @@ The best configuration (val loss = 0.1798) was:
 - **intermediate_size** = 256  
 - **dropout** = 0.269  
 - **weight_decay** = 0.0403  
-- **frozen_layers** = 6 :contentReference[oaicite:4]{index=4}
+- **frozen_layers** = 6
 
 ## Performance
 
@@ -87,7 +85,7 @@ The best configuration (val loss = 0.1798) was:
 - **Train loss** ↓ from 0.2887 → 0.1585   
 - **Val loss** ↓ to 0.1756 (best)  
 - **Macro-F1** → 0.9326  
-- Precision/Recall for both classes ≈ 0.93 :contentReference[oaicite:5]{index=5}
+- Precision/Recall for both classes ≈ 0.93
 
 ### Test
 
@@ -96,14 +94,14 @@ The best configuration (val loss = 0.1798) was:
 | Precision     | 0.93      | 0.93  |         |
 | Recall        | 0.94      | 0.92  |         |
 | **F1-Score**  | 0.93      | 0.92  | **0.93**|
-| **Accuracy**  |           |       | **0.93**| :contentReference[oaicite:6]{index=6}
+| **Accuracy**  |           |       | **0.93**|
 
 ### Comparison
 
 | Model                              | Test Accuracy |
 |:-----------------------------------|:--------------|
 | Misra & Arora (CNN-LSTM hybrid)    | 89.7 %        |
-| **This work (BERT-BiLSTM)**        | **93.0 %**    :contentReference[oaicite:7]{index=7}
+| **This work (BERT-BiLSTM)**        | **93.0 %**    |
 
 ## Usage
 
@@ -111,30 +109,24 @@ The best configuration (val loss = 0.1798) was:
    ```bash
    pip install -r requirements.txt
    python -m spacy download en_core_web_sm
-````
-
-2. **Preprocess data**
-
+   ```
+2. **Preprocess data**  
    ```bash
    python utils/preprocess_news.py
    python utils/preprocessing.py
    ```
-3. **Visualize / Analyze**
-
+3. **Visualize / Analyze**  
    ```bash
    python utils/word_cloud.py
    python utils/data_visualization.py
    ```
-4. **Hyperparameter tuning**
-
+4. **Hyperparameter tuning**  
    ```bash
    python utils/model_tuner.py
    ```
-5. **Train & evaluate**
-
+5. **Train & evaluate**  
    ```bash
    python main.py
    python -m utils.test_evaluation
    ```
-
 
