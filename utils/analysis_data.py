@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix, classification_report
 from .config import Config
+import numpy as np
 
 def plot_training_results(train_losses, val_losses, train_metrics, val_metrics, save_path=None):
     """Plot training results."""
@@ -72,6 +73,64 @@ def get_metrics_report(y_true, y_pred):
     except Exception as e:
         print(f"Error generating metrics report: {str(e)}")
         return None
+
+def plot_classical_results(model_results, save_path):
+    plt.figure(figsize=(15, 10))
+    
+    # 1. Cross-validation scores subplot
+    plt.subplot(2, 2, 1)
+    for model_name, scores in model_results.items():
+        plt.plot(scores['c_values'], scores['cv_scores'], 
+                marker='o', label=model_name)
+    plt.xlabel('Regularization Parameter (C)')
+    plt.xscale('log')
+    plt.ylabel('Cross-validation F1 Score')
+    plt.title('Model Performance vs Regularization')
+    plt.legend()
+    plt.grid(True)
+    
+    # 2. Feature importance subplot
+    plt.subplot(2, 2, 2)
+    for model_name, importances in model_results.items():
+        if len(importances['feature_importance']) > 0:  # Check if features exist
+            top_n = min(10, len(importances['feature_importance']))
+            plt.barh(range(top_n), 
+                    importances['feature_importance'][:top_n],
+                    label=model_name)
+    plt.xlabel('Importance Score')
+    plt.ylabel('Top Features')
+    plt.title('Top Feature Importances')
+    plt.legend()
+    
+    # 3. Confusion Matrix heatmap
+    plt.subplot(2, 2, 3)
+    if 'confusion_matrix' in list(model_results.values())[0]:  # Use first model's confusion matrix
+        sns.heatmap(list(model_results.values())[0]['confusion_matrix'],
+                    annot=True, fmt='d',
+                    xticklabels=['Not Sarcastic', 'Sarcastic'],
+                    yticklabels=['Not Sarcastic', 'Sarcastic'])
+    plt.title('Confusion Matrix')
+    
+    # 4. Performance metrics comparison
+    plt.subplot(2, 2, 4)
+    metrics = ['Precision', 'Recall', 'F1-Score']
+    x = np.arange(len(metrics))
+    width = 0.35
+    
+    for i, (model_name, scores) in enumerate(model_results.items()):
+        plt.bar(x + i*width, 
+               [scores['precision'], scores['recall'], scores['f1']], 
+               width, label=model_name)
+    
+    plt.xlabel('Metrics')
+    plt.ylabel('Score')
+    plt.title('Performance Metrics Comparison')
+    plt.xticks(x + width/2, metrics)
+    plt.legend()
+    
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close()
 
 if __name__ == "__main__":
     print("This module provides plotting and metrics functions for model evaluation")
