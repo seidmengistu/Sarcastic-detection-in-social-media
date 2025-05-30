@@ -42,11 +42,17 @@ On the News Headlines dataset (26,709 examples from The Onion vs. mainstream sou
 
 ## Dataset
 
-The dataset is split into:
+The dataset is split into for CNN-Bilstm+attention:
 
 - Training: 80% (21,367 samples)
 - Validation: 10% (2,671 samples)
 - Test: 10% (2,671 samples)
+
+For the Bert_Bilstm 80% for Training and Validation and 20% for testing
+- Training:64% of the 80%
+- Validation:16% of the 80%
+- Testing:20%
+For classicals we used 3-fold cross validation.
 
 All splits maintain class distribution through stratification.
 
