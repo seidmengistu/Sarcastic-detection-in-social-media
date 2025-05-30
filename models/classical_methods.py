@@ -6,12 +6,56 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import LinearSVC
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, confusion_matrix
 from tqdm import tqdm
 from utils.config import Config
 from utils.dataset_loader import load_data
-from utils.analysis_data import plot_training_results, get_metrics_report
+from utils.analysis_data import plot_classical_results
 from utils.preprocessing import preprocess_text
+
+def get_feature_importance(grid):
+    """Extract feature importance from the model"""
+    if hasattr(grid.best_estimator_.named_steps['clf'], 'coef_'):
+        # Get the fitted vectorizer from the pipeline
+        vectorizer = grid.best_estimator_.named_steps['tfidf']
+        feature_names = vectorizer.get_feature_names_out()
+        coefficients = grid.best_estimator_.named_steps['clf'].coef_[0]
+        # Get top features with their names
+        feature_importance = np.abs(coefficients)
+        return feature_importance
+    return []
+
+def get_cv_results_by_c(grid):
+    """Extract CV results organized by C value"""
+    c_values = []
+    cv_scores = []
+    
+    # Get all results
+    for params, score in zip(grid.cv_results_['params'], grid.cv_results_['mean_test_score']):
+        c_value = params['clf__C']
+        if c_value not in c_values:
+            c_values.append(c_value)
+            cv_scores.append(score)
+            
+    # Sort by C value
+    c_scores = sorted(zip(c_values, cv_scores), key=lambda x: x[0])
+    return [x[0] for x in c_scores], [x[1] for x in c_scores]
+
+def collect_model_results(grid, model_name, y_true, y_pred):
+    """Collect all relevant metrics for plotting"""
+    # Get CV results organized by C value
+    c_values, cv_scores = get_cv_results_by_c(grid)
+    
+    results = {
+        'c_values': c_values,
+        'cv_scores': cv_scores,
+        'feature_importance': get_feature_importance(grid),
+        'precision': classification_report(y_true, y_pred, output_dict=True)['macro avg']['precision'],
+        'recall': classification_report(y_true, y_pred, output_dict=True)['macro avg']['recall'],
+        'f1': classification_report(y_true, y_pred, output_dict=True)['macro avg']['f1-score'],
+        'confusion_matrix': confusion_matrix(y_true, y_pred)
+    }
+    return results
 
 def run():
     try:
@@ -34,15 +78,26 @@ def run():
         # Define models with configurations
         models_and_params = {
             "Logistic Regression": {
-                'model': LogisticRegression(class_weight='balanced', max_iter=Config.NUM_EPOCHS * 1000),
+                'model': LogisticRegression(
+                    class_weight='balanced',
+                    max_iter=2 * 1000,
+                    random_state=42
+                ),
                 'params': {
-                    'clf__C': [0.01, 0.1, 1, 10]
+                    'clf__C': [0.001, 0.01, 0.1, 1, 10],
+                    'clf__penalty': ['l1', 'l2'],
+                    'clf__solver': ['liblinear', 'saga']
                 }
             },
             "SVM": {
-                'model': LinearSVC(class_weight='balanced'),
+                'model': LinearSVC(
+                    class_weight='balanced',
+                    random_state=42
+                ),
                 'params': {
-                    'clf__C': [0.1, 1, 10]
+                    'clf__C': [0.001, 0.01, 0.1, 1, 10],
+                    'clf__penalty': ['l2'], 
+                    'clf__loss': ['hinge', 'squared_hinge']
                 }
             },
         }
@@ -54,16 +109,17 @@ def run():
         for name, mp in models_and_params.items():
             print(f"\n{'='*20} Training {name} {'='*20}")
 
+            # Create pipeline with TF-IDF and classifier
             pipeline = Pipeline([
-                ('tfidf', TfidfVectorizer(max_features=10000, ngram_range=(1, 2))),
+                ('tfidf', TfidfVectorizer(
+                    max_features=10000,
+                    ngram_range=(1, 2),
+                    min_df=5,
+                    max_df=0.95,
+                    norm='l2'
+                )),
                 ('clf', mp['model'])
             ])
-
-            # Lists to store metrics for plotting
-            train_losses = []
-            val_losses = []
-            train_metrics = []
-            val_metrics = []
 
             # Create KFold cross-validator
             kf = KFold(n_splits=3, shuffle=True, random_state=42)
@@ -80,56 +136,21 @@ def run():
 
             # Fit on training data
             grid.fit(train_texts, train_labels)
-
-            # Store metrics from CV results
-            for train_idx, val_idx in kf.split(train_texts):
-                # Get predictions for this fold
-                train_fold_pred = grid.predict(train_texts[train_idx])
-                val_fold_pred = grid.predict(train_texts[val_idx])
-                
-                # Get metrics reports
-                train_report = classification_report(
-                    train_labels[train_idx],
-                    train_fold_pred,
-                    target_names=['Not Sarcastic', 'Sarcastic'],
-                    output_dict=True
-                )
-                val_report = classification_report(
-                    train_labels[val_idx],
-                    val_fold_pred,
-                    target_names=['Not Sarcastic', 'Sarcastic'],
-                    output_dict=True
-                )
-                
-                # Add true/pred pairs for confusion matrix
-                train_report['true'] = train_labels[train_idx].tolist()
-                train_report['pred'] = train_fold_pred.tolist()
-                val_report['true'] = train_labels[val_idx].tolist()
-                val_report['pred'] = val_fold_pred.tolist()
-                
-                # Store metrics
-                train_metrics.append(train_report)
-                val_metrics.append(val_report)
-                
-                # Use negative log loss as a proxy for loss
-                train_losses.append(1 - train_report['accuracy'])
-                val_losses.append(1 - val_report['accuracy'])
+            
+            # Get predictions
+            val_preds = grid.predict(val_texts)
+            test_preds = grid.predict(test_texts)
+            
+            # Collect results for plotting
+            all_results[name] = collect_model_results(
+                grid, 
+                name,
+                test_labels,
+                test_preds
+            )
 
             print(f"\n✅ Best Parameters for {name}: {grid.best_params_}")
-
-            # Evaluate on validation set
-            val_preds = grid.predict(val_texts)
-            print(f"\n📊 Validation Results for {name}:")
-            print(classification_report(
-                val_labels,
-                val_preds,
-                target_names=['Not Sarcastic', 'Sarcastic'],
-                digits=4
-            ))
-
-            # Evaluate on test set
-            test_preds = grid.predict(test_texts)
-            print(f"\n📈 Test Results for {name}:")
+            print(f"\n📊 Test Results for {name}:")
             print(classification_report(
                 test_labels,
                 test_preds,
@@ -137,27 +158,9 @@ def run():
                 digits=4
             ))
 
-            # Store results for plotting
-            all_results[name] = {
-                'train_losses': train_losses,
-                'val_losses': val_losses,
-                'train_metrics': train_metrics,
-                'val_metrics': val_metrics
-            }
-
-            print("=" * 60)
-
-        # Plot results for each model
-        for name, results in all_results.items():
-            save_path = f'classical_{name.lower().replace(" ", "_")}.png'
-            plot_training_results(
-                results['train_losses'],
-                results['val_losses'],
-                results['train_metrics'],
-                results['val_metrics'],
-                save_path=save_path
-            )
-            print(f"✓ Results plot saved as {save_path}")
+        # Plot results using new plotting function
+        plot_classical_results(all_results, 'classical_models_comparison.png')
+        print("✓ Results plot saved as classical_models_comparison.png")
 
     except Exception as e:
         print(f"Error in classical methods: {str(e)}")
