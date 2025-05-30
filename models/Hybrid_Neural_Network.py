@@ -1,4 +1,3 @@
-
 from itertools import product
 import os
 import json
@@ -10,7 +9,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
-tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+from utils.config import Config
+from utils.dataset_loader import load_data
+
+tokenizer = BertTokenizer.from_pretrained(Config.BERT_MODEL_NAME)
 
 # Set random seeds for reproducibility
 random.seed(42)
@@ -22,43 +24,51 @@ if torch.cuda.is_available():
 # ====================
 # Data Loading & Preprocessing
 # ====================
-PROJECT_ROOT_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "../."))
-DATA_DIR = os.path.join(PROJECT_ROOT_DIR, "data")
-DATA_FILE = os.path.join(
-    DATA_DIR, "raw", "News Headlines", "Sarcasm_Headlines_Dataset_v2.json")
-glove_path = os.path.join(
-    DATA_DIR, "embeddings", "glove.6B.300d.txt")
+# Load data using our dataset loader
+data = load_data(preprocessed=True)
+if data is None:
+    raise ValueError("Could not load data")
 
-best_model_path = os.path.join(
-    PROJECT_ROOT_DIR, "results", "lstm", "best_model_last.pth")
-# Parse the JSON data (each line is a JSON record)
-data = []
-with open(DATA_FILE, 'r', encoding='utf-8') as f:
-    for line in f:
-        data.append(json.loads(line.strip()))
+# Convert labels to integers if they are strings
+def convert_labels(labels):
+    if isinstance(labels[0], str):
+        return np.array([1 if l == 'sarc' else 0 for l in labels])
+    return np.array(labels)
 
-# Extract headlines and labels
-headlines = [item['headline'] for item in data]
-labels = [item['is_sarcastic'] for item in data]
+# Combine all data to resplit with 80/10/10 ratio
+all_texts = np.array([str(text) for text in np.concatenate([data['train'][0], data['val'][0], data['test'][0]])])
+all_labels = convert_labels(np.concatenate([data['train'][1], data['val'][1], data['test'][1]]))
 
+# First split: train vs (val+test) - 80/20
+train_texts, temp_texts, train_labels, temp_labels = train_test_split(
+    all_texts, all_labels, 
+    test_size=0.2,  
+    random_state=42,
+    stratify=all_labels
+)
+
+# Second split: val vs test - 50/50 (10% each of total)
+val_texts, test_texts, val_labels, test_labels = train_test_split(
+    temp_texts, temp_labels,
+    test_size=0.5,  
+    random_state=42,
+    stratify=temp_labels
+)
+
+print("\nDataset split sizes:")
+print(f"Training:   {len(train_texts)} ({len(train_texts)/len(all_texts):.1%})")
+print(f"Validation: {len(val_texts)} ({len(val_texts)/len(all_texts):.1%})")
+print(f"Test:       {len(test_texts)} ({len(test_texts)/len(all_texts):.1%})")
 
 # Text preprocessing
 def tokenize(text):
-    # Tokenize input text
-    tokens = tokenizer.tokenize(text)
-    return tokens[:25]  # Limit to 25 tokens for consistency
+    tokens = tokenizer.tokenize(str(text))  
+    return tokens[:Config.BERT_MAX_LENGTH]  
 
-
-tokenized_headlines = [tokenize(h) for h in headlines]
-
-# Split data into train/validation/test (80/10/10)
-train_sentences, temp_sentences, train_labels, temp_labels = train_test_split(
-    tokenized_headlines, labels, test_size=0.2, random_state=42, stratify=labels
-)
-val_sentences, test_sentences, val_labels, test_labels = train_test_split(
-    temp_sentences, temp_labels, test_size=0.5, random_state=42, stratify=temp_labels
-)
+# Tokenize all texts
+train_sentences = [tokenize(t) for t in train_texts]
+val_sentences = [tokenize(t) for t in val_texts]
+test_sentences = [tokenize(t) for t in test_texts]
 
 # Build vocabulary from training data
 vocab = {'<PAD>': 0, '<UNK>': 1}
@@ -104,20 +114,25 @@ print(f"Max sequence length: {max_len}")
 # ====================
 # Prepare Embeddings (Word2Vec)
 # ====================
-embedding_dim = 300  # dimension for embeddings
+embedding_dim = 300 
 
 # Initialize embedding matrix with random for all words (will overwrite known words)
 embedding_matrix = np.random.uniform(-0.25, 0.25,
-                                     (vocab_size, embedding_dim)).astype(np.float32)
+                                   (vocab_size, embedding_dim)).astype(np.float32)
 
-# used GloVe embeddings(300d)
+# Load GloVe embeddings from config path
+glove_path = os.path.join(Config.DATA_DIR, "embeddings", "glove.6B.300d.txt")
 embedding_index = {}
-with open(glove_path, 'r', encoding='utf8') as f:
-    for line in f:
-        values = line.split()
-        word = values[0]
-        vector = np.asarray(values[1:], dtype='float32')
-        embedding_index[word] = vector
+if os.path.exists(glove_path):
+    print("Loading GloVe embeddings...")
+    with open(glove_path, 'r', encoding='utf8') as f:
+        for line in f:
+            values = line.split()
+            word = values[0]
+            vector = np.asarray(values[1:], dtype='float32')
+            embedding_index[word] = vector
+else:
+    print("Warning: GloVe embeddings not found. Using random embeddings.")
 
 # Assign pretrained embeddings to our matrix
 for word, idx in vocab.items():
@@ -125,13 +140,6 @@ for word, idx in vocab.items():
         embedding_matrix[idx] = embedding_index[word]
 # Convert embedding matrix to tensor
 embedding_matrix = torch.tensor(embedding_matrix)
-
-
-# ====================
-# Dataset and DataLoader
-# ====================
-
-
 class SarcasmDataset(Dataset):
     def __init__(self, sequences, labels):
         self.sequences = torch.LongTensor(sequences)
@@ -144,14 +152,14 @@ class SarcasmDataset(Dataset):
         return self.sequences[idx], self.labels[idx]
 
 
-batch_size = 64
+# Use batch size from config
 train_dataset = SarcasmDataset(train_sequences, train_labels)
 val_dataset = SarcasmDataset(val_sequences, val_labels)
 test_dataset = SarcasmDataset(test_sequences, test_labels)
 
-train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=batch_size)
-test_loader = DataLoader(test_dataset, batch_size=batch_size)
+train_loader = DataLoader(train_dataset, batch_size=Config.BATCH_SIZE, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=Config.BATCH_SIZE)
+test_loader = DataLoader(test_dataset, batch_size=Config.BATCH_SIZE)
 
 # ====================
 # Model Definition: Hybrid CNN + BiLSTM + Attention
@@ -166,7 +174,7 @@ class SarcasmModel(nn.Module):
         self.embedding = nn.Embedding(
             vocab_size, embed_dim, padding_idx=vocab['<PAD>'])
         self.embedding.weight.data.copy_(embedding_weights)
-        self.embedding.weight.requires_grad = True  # fine-tune embeddings
+        self.embedding.weight.requires_grad = True  
 
         # Convolution layers (CNN for n-gram features)
         self.convs = nn.ModuleList([
@@ -191,52 +199,43 @@ class SarcasmModel(nn.Module):
         self.dropout = nn.Dropout(dropout_prob)
 
     def forward(self, x):
-        # x: [batch_size, seq_len]
+        # Get embeddings
         emb = self.embedding(x)  # [batch, seq_len, embed_dim]
-        emb = emb.permute(0, 2, 1)  # [batch, embed_dim, seq_len] for conv
-
-        # CNN branch: apply each convolution + relu + maxpool
+        
+        # CNN branch
+        emb_cnn = emb.permute(0, 2, 1)  
         conv_outputs = []
         for conv in self.convs:
-            c = conv(emb)          # [batch, num_filters, seq_len]
+            c = conv(emb_cnn)  
             c = F.relu(c)
-            # Global max pooling over time dimension
-            c = F.max_pool1d(c, kernel_size=c.shape[2]).squeeze(
-                2)  # [batch, num_filters]
+            c = F.max_pool1d(c, kernel_size=c.shape[2]).squeeze(2)  
             conv_outputs.append(c)
-        # [batch, num_filters * len(filter_sizes)]
-        cnn_feat = torch.cat(conv_outputs, dim=1)
-
-        # BiLSTM branch: use original embedding
-        emb2 = self.embedding(x)  # [batch, seq_len, embed_dim]
-        lstm_out, _ = self.bilstm(emb2)  # [batch, seq_len, lstm_hidden*2]
-
-        # Attention: calculate weights and context vector
-        # [batch, seq_len, hidden*2]
-        u = torch.tanh(self.attn_linear(lstm_out))
-        # [batch, seq_len, hidden*2] dot [hidden*2] -> [batch, seq_len]
-        scores = torch.matmul(u, self.attn_vector)
-        attn_weights = F.softmax(scores, dim=1)  # [batch, seq_len]
-        # Compute weighted sum of LSTM outputs (context vector)
-        context = torch.bmm(attn_weights.unsqueeze(
-            1), lstm_out).squeeze(1)  # [batch, hidden*2]
-
-        # Combine CNN and attention features
-        # [batch, total_features]
-        combined = torch.cat([cnn_feat, context], dim=1)
+        cnn_feat = torch.cat(conv_outputs, dim=1)  
+        
+        # BiLSTM branch
+        lstm_out, _ = self.bilstm(emb)  
+        
+        # Attention
+        u = torch.tanh(self.attn_linear(lstm_out))  
+        scores = torch.matmul(u, self.attn_vector) 
+        attn_weights = F.softmax(scores, dim=1) 
+        context = torch.bmm(attn_weights.unsqueeze(1), lstm_out).squeeze(1)  
+        
+        # Combine features
+        combined = torch.cat([cnn_feat, context], dim=1)  
         combined = self.dropout(combined)
         hidden = F.relu(self.fc(combined))
         hidden = self.dropout(hidden)
-        output = self.out(hidden)  # [batch, 2]
+        output = self.out(hidden)  
+        
         return output, attn_weights
 
 
 # ====================
 # Training & Evaluation
 # ====================
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = Config.DEVICE
 print(f"Using device: {device}")
-
 
 best_model = None
 
@@ -260,6 +259,10 @@ best_val_acc = 0
 best_model = None
 best_params = {}
 
+# Save path for the best model
+best_model_path = os.path.join(Config.PROJECT_ROOT, "checkpoints", "best_hybrid_model.pt")
+os.makedirs(os.path.dirname(best_model_path), exist_ok=True)
+
 for params in param_combinations:
     print(f"\nTesting params: {params}")
 
@@ -281,8 +284,7 @@ for params in param_combinations:
     criterion = nn.CrossEntropyLoss()
 
     # Training loop (shortened for grid search)
-    for epoch in range(5):  # Fewer epochs for faster search
-        model.train()
+    for epoch in range(Config.NUM_EPOCHS): 
         for batch_x, batch_y in train_loader:
             batch_x, batch_y = batch_x.to(device), batch_y.to(device)
             optimizer.zero_grad()
@@ -290,7 +292,8 @@ for params in param_combinations:
             loss = criterion(outputs, batch_y)
             loss.backward()
             optimizer.step()
-            # Validation
+
+        # Validation
         model.eval()
         correct = 0
         total = 0
@@ -313,21 +316,22 @@ for params in param_combinations:
 # Save best model
 torch.save(best_model, best_model_path)
 print(f"\nBest Params: {best_params}")
+print(f"Best model saved to: {best_model_path}")
 
 # Evaluate on test set using best model
 model = SarcasmModel(
     vocab_size,
     embedding_dim,
     embedding_matrix,
-    num_filters=params['num_filters'],
-    filter_sizes=params['filter_sizes'],
-    lstm_hidden=params['lstm_hidden'],
-    fc_hidden=params['fc_hidden'],
-    dropout_prob=params['dropout_prob'],
-    lstm_layers=params['lstm_layers']
+    num_filters=best_params['num_filters'],
+    filter_sizes=best_params['filter_sizes'],
+    lstm_hidden=best_params['lstm_hidden'],
+    fc_hidden=best_params['fc_hidden'],
+    dropout_prob=best_params['dropout_prob'],
+    lstm_layers=best_params['lstm_layers']
 ).to(device)
 
-model.load_state_dict(torch.load(r'best_model_last.pth'))
+model.load_state_dict(torch.load(best_model_path))
 model.eval()
 correct = 0
 total = 0
