@@ -1,165 +1,148 @@
 # Sarcasm Detection in Social Media
 
-This project explores classical, deep-learning, and hybrid methods for detecting sarcasm in social-media text, focusing on three main architectures:
+An NLP experiment comparing classical machine-learning, neural, and transformer-based approaches for binary sarcasm classification. The project uses the News Headlines Dataset, which contains headlines from *The Onion* and non-satirical news sources.
 
-1. A hybrid **BERT-BiLSTM** that combines pretrained contextual embeddings with sequential modeling
-2. A hybrid **CNN-BiLSTM-Attention** that combines n-gram features with sequential modeling and attention mechanism
-3. Classical methods (**SVM** and **Logistic Regression**) with TF-IDF features
+## Results
 
-On the News Headlines dataset (26,709 examples from The Onion vs. mainstream sources), our best models achieve:
+| Model | Test accuracy | Macro F1 |
+| --- | ---: | ---: |
+| BERT-BiLSTM | **93.0%** | **0.93** |
+| CNN-BiLSTM with attention | 91.2% | 0.91 |
+| TF-IDF with SVM / Logistic Regression | 87.5% | 0.87 |
 
-- BERT-BiLSTM: **93.0% test accuracy** and **0.93 macro-F1** score
-- CNN-BiLSTM-Attention: **91.2% test accuracy** and **0.91 macro-F1** score
-- Classical Methods: **87.5% test accuracy** and **0.87 macro-F1** score
+The reported BERT-BiLSTM result comes from a stratified held-out test split. The repository includes training curves, model-comparison plots, and a test confusion matrix.
 
-## Project Structure
+![BERT-BiLSTM training curves](bert_bilstm_training.png)
 
+## What it demonstrates
+
+- Reproducible text preprocessing and stratified train/validation/test splitting
+- Transfer learning with contextual BERT representations
+- Sequential modelling with a bidirectional LSTM
+- CNN-BiLSTM architecture with attention and GloVe embeddings
+- TF-IDF baselines using Linear SVM and Logistic Regression
+- Optuna hyperparameter search, early stopping, and model checkpointing
+- Evaluation with accuracy, precision, recall, macro-F1, classification reports, and confusion matrices
+
+## Model design
+
+### BERT-BiLSTM
+
+The strongest model passes `bert-base-uncased` token representations to a bidirectional LSTM and a feed-forward classification head. BERT embeddings and the first six encoder layers are frozen in the final configuration.
+
+### CNN-BiLSTM-Attention
+
+The second neural model combines GloVe embeddings, convolutional n-gram features, bidirectional sequence modelling, and attention.
+
+### Classical baselines
+
+The baseline pipeline uses unigram and bigram TF-IDF features with grid-searched Logistic Regression and Linear SVM classifiers.
+
+## Dataset and split
+
+The project uses version 2 of the [News Headlines Dataset for Sarcasm Detection](https://github.com/rishabhmisra/News-Headlines-Dataset-For-Sarcasm-Detection), containing 26,709 labelled headlines.
+
+For the BERT-BiLSTM experiment:
+
+- Training: 64%
+- Validation: 16%
+- Test: 20%
+
+All splits use a fixed random seed and preserve class proportions.
+
+The dataset is not committed to this repository. Download `Sarcasm_Headlines_Dataset_v2.json` and place it at:
+
+```text
+data/raw/Sarcasm_Headlines_Dataset_v2.json
 ```
-├── data/
-│   ├── raw/ … original JSON headlines
-│   ├── embeddings/
-│   │   └── glove.6B.300d.txt  … GloVe embeddings for hybrid model
-│   └── processed/
-│       └── preprocessed_news.csv  … 26,709 headlines, split 80/10/10
-│           └── train: 21,367 | val: 2,671 | test: 2,671
-├── models/
-│   ├── bert_lstm_model.py     … BERT-BiLSTM implementation
-│   ├── Hybrid_Neural_Network.py … CNN-BiLSTM-Attention implementation
-│   └── classical_methods.py   … TF-IDF + Logistic Regression / SVM
-├── utils/
-│   ├── config.py              … all hyperparameters, paths, and device settings
-│   ├── dataset_loader.py      … stratified train/val/test split
-│   ├── preprocessing.py       … text cleaning, emoji demojization, URL masking
-│   ├── preprocess_news.py     … news-specific normalization
-│   ├── model_tuner.py         … Optuna hyperparameter search
-│   ├── evaluation_utils.py    … metrics, classification reports, confusion matrices
-│   ├── analysis_data.py       … loss/F1 plotting (training curves)
-│   ├── data_visualization.py  … class distribution and exploratory plots
-│   └── word_cloud.py         … word-cloud generation
-├── main.py                    … end-to-end training and evaluation script
-└── requirements.txt           … exact versions of PyTorch, Transformers, scikit-learn, spaCy, Optuna, etc.
+
+## Getting started
+
+### Requirements
+
+- Python 3.10 or 3.11
+- A CUDA-capable GPU is recommended for transformer training
+
+### Installation
+
+```bash
+git clone https://github.com/seidmengistu/Sarcastic-detection-in-social-media.git
+cd Sarcastic-detection-in-social-media
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m spacy download en_core_web_sm
+mkdir -p data/raw data/processed checkpoints
 ```
 
-## Dataset
+On Windows, activate the environment with `.venv\Scripts\activate`.
 
-The dataset is split into for CNN-Bilstm+attention:
+### Preprocess the dataset
 
-- Training: 80% (21,367 samples)
-- Validation: 10% (2,671 samples)
-- Test: 10% (2,671 samples)
+```bash
+python utils/preprocess_news.py
+```
 
-For the Bert_Bilstm 80% for Training and Validation and 20% for testing
-- Training:64% of the 80%
-- Validation:16% of the 80%
-- Testing:20%
-For classicals we used 3-fold cross validation.
+### Train and evaluate
 
-All splits maintain class distribution through stratification.
+The main entry point discovers the available model modules and asks which one to run:
 
-## Preprocessing
+```bash
+python main.py
+```
 
-- **Text cleaning**: Unicode normalization, lowercase (for uncased BERT), removal/masking of URLs and user mentions, conversion of emojis to text, contraction expansion, stripping special characters.
-- **Classical pipeline**: Stop-word removal, lemmatization, TF-IDF vectorization (unigrams + bigrams, max_features=10 000).
-- **Transformer pipeline**: BERT tokenization (max_length=128), padding/truncation, attention masks.
+Individual experiments can also be run directly:
 
-## Models
+```bash
+python -m models.bert_lstm_model
+python -m models.classical_methods
+python -m models.Hybrid_Neural_Network
+```
 
-### 1. BERT-BiLSTM
+Run the Optuna search with:
 
-- Combines BERT's contextual embeddings with bidirectional LSTM
-- Uses attention mechanism for focusing on relevant parts of text
-- Achieves state-of-the-art performance on the dataset
+```bash
+python -m utils.model_tuner
+```
 
-### 2. CNN-BiLSTM-Attention (Hybrid Neural Network)
+## Best BERT-BiLSTM configuration
 
-- Combines CNN for n-gram feature extraction with BiLSTM for sequential modeling
-- Uses GloVe embeddings (300d) for word representations
-- Implements Bahdanau-style attention mechanism
-- Features:
-  - Multiple convolutional filters for capturing different n-gram patterns
-  - Bidirectional LSTM for capturing long-range dependencies
-  - Attention mechanism for focusing on relevant parts of text
-  - Dropout for regularization
-  - Grid search for hyperparameter optimization
+| Hyperparameter | Value |
+| --- | ---: |
+| Learning rate | 4.20e-5 |
+| Batch size | 16 |
+| LSTM hidden size | 256 |
+| Intermediate size | 256 |
+| Dropout | 0.269 |
+| Weight decay | 0.0403 |
+| Frozen BERT layers | 6 |
 
-### 3. Classical Methods
+The configuration was selected from six Optuna trials using validation loss.
 
-- Implements both SVM and Logistic Regression
-- Uses TF-IDF vectorization for feature extraction
-- Includes regularization and parameter tuning
+## Project layout
 
-## Hyperparameter Optimization
+```text
+models/
+  bert_lstm_model.py         BERT-BiLSTM model and training loop
+  Hybrid_Neural_Network.py  CNN-BiLSTM-Attention experiment
+  classical_methods.py      TF-IDF baselines
+utils/
+  config.py                 Paths and hyperparameters
+  dataset_loader.py         Stratified dataset splitting
+  preprocess_news.py        Dataset conversion and normalization
+  model_tuner.py            Optuna search
+  evaluation_utils.py       Metrics and confusion matrices
+main.py                     Experiment launcher
+requirements.txt            Python dependencies
+```
 
-We ran **6 Optuna trials** (≈ 7 h) over this search space:
+## Reproducibility and limitations
 
-| Hyperparameter    | Search Space               |
-| :---------------- | :------------------------- |
-| learning_rate     | [1e−6, 1e−4] (log-uniform) |
-| batch_size        | {8, 16, 32}                |
-| lstm_hidden_size  | {256, 384, 512}            |
-| intermediate_size | {128, 256}                 |
-| dropout_rate      | [0.2, 0.5]                 |
-| weight_decay      | [0.01, 0.05]               |
-| frozen_layers     | {6, 7, 8, 9}               |
+- Random seeds and split proportions are fixed in the data pipeline.
+- Model weights and the source dataset are excluded because of their size and licensing considerations.
+- The dataset source is correlated with the label: satirical and non-satirical headlines come from different publishers. Results therefore measure performance on this benchmark and may not generalize to conversational sarcasm.
+- Reproducing the exact neural results can still vary slightly by hardware and library version.
 
-The best configuration (val loss = 0.1798) was:
+## Author
 
-- **lr** = 4.20×10⁻⁵
-- **batch_size** = 16
-- **hidden_size** = 256
-- **intermediate_size** = 256
-- **dropout** = 0.269
-- **weight_decay** = 0.0403
-- **frozen_layers** = 6
-
-## Performance
-
-### Validation (Epoch 2)
-
-- **Train loss** ↓ from 0.2887 → 0.1585
-- **Val loss** ↓ to 0.1756 (best)
-- **Macro-F1** → 0.9326
-- Precision/Recall for both classes ≈ 0.93
-
-### Test
-
-| Metric       | Not Sarc. | Sarc. | Overall  |
-| :----------- | :-------: | :---: | :------: |
-| Precision    |   0.93    | 0.93  |          |
-| Recall       |   0.94    | 0.92  |          |
-| **F1-Score** |   0.93    | 0.92  | **0.93** |
-| **Accuracy** |           |       | **0.93** |
-
-### Comparison
-
-| Model                           | Test Accuracy |
-| :------------------------------ | :------------ |
-| Misra & Arora (CNN-LSTM hybrid) | 89.7 %        |
-| **This work (BERT-BiLSTM)**     | **93.0 %**    |
-
-## Usage
-
-1. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   python -m spacy download en_core_web_sm
-   ```
-2. **Preprocess data**
-   ```bash
-   python utils/preprocess_news.py
-   python utils/preprocessing.py
-   ```
-3. **Visualize / Analyze**
-   ```bash
-   python utils/word_cloud.py
-   python utils/data_visualization.py
-   ```
-4. **Hyperparameter tuning**
-   ```bash
-   python utils/model_tuner.py
-   ```
-5. **Train & evaluate**
-   ```bash
-   python main.py
-   python -m utils.test_evaluation
-   ```
+[Seid Mengistu](https://github.com/seidmengistu)
